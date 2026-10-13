@@ -25,6 +25,11 @@ class ExamVersion extends Model
         return $this->hasMany(Question::class)->orderBy('number');
     }
 
+    public function submissions(): HasMany
+    {
+        return $this->hasMany(Submission::class);
+    }
+
     public function isLocked(): bool
     {
         return $this->locked_at !== null;

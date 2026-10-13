@@ -78,10 +78,8 @@ class ExamResultService
     /** Release all finalized, unreleased results of an exam. Released results are not changed silently. */
     public function release(Exam $exam, User $teacher): int
     {
-        if ($exam->isDraft()) {
-            throw ValidationException::withMessages(['exam' => 'A draft exam has no results to release.']);
-        }
-
+        // A draft exam may still hold finalized results from an earlier version, so only the
+        // existence of unreleased results is checked.
         return DB::transaction(function () use ($exam, $teacher) {
             $ids = $exam->results()->whereNull('released_at')->lockForUpdate()->pluck('id');
             if ($ids->isEmpty()) {

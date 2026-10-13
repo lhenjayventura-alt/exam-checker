@@ -55,13 +55,24 @@ class ExamService
                 throw ValidationException::withMessages(['number' => "Question {$number} already exists."]);
             }
 
-            $config = null;
-            if ($data['type'] === 'multiple_choice') {
-                $config = [
+            $config = match ($data['type']) {
+                'multiple_choice' => [
                     'multiple_select' => (bool) ($data['multiple_select'] ?? false),
                     'partial_credit' => $data['partial_credit'] ?? 'none',
-                ];
-            }
+                ],
+                'identification' => [
+                    'case_sensitive' => (bool) ($data['case_sensitive'] ?? false),
+                    'fuzzy' => (bool) ($data['fuzzy'] ?? false),
+                ],
+                'problem_solving' => [
+                    'tolerance' => (float) ($data['tolerance'] ?? 0),
+                    'tolerance_type' => $data['tolerance_type'] ?? 'absolute',
+                    'units' => array_values($data['units'] ?? []),
+                    'unit_required' => (bool) ($data['unit_required'] ?? false),
+                    'answer_points' => (float) ($data['answer_points'] ?? $data['points']),
+                ],
+                default => null,
+            };
 
             $question = $version->questions()->create([
                 'number' => $number,
@@ -81,13 +92,26 @@ class ExamService
                 }
                 $correct = array_values(array_unique(array_map('strtoupper', $data['correct'])));
                 sort($correct);
-            } else {
+            } elseif ($data['type'] === 'true_false') {
                 $correct = [strtolower($data['correct'][0])];
+            } elseif ($data['type'] === 'identification') {
+                // Display forms are stored; the grader normalizes when comparing.
+                $correct = array_values(array_unique(array_map('trim', $data['accepted_answers'])));
+            } else {
+                $correct = [(string) (float) $data['expected']];
+                foreach (array_values($data['criteria'] ?? []) as $i => $criterion) {
+                    $question->rubricCriteria()->create([
+                        'label' => $criterion['label'],
+                        'description' => $criterion['description'] ?? null,
+                        'max_points' => $criterion['max_points'],
+                        'position' => $i + 1,
+                    ]);
+                }
             }
 
             $question->answerKey()->create(['correct_values' => $correct]);
 
-            return $question->load('options', 'answerKey');
+            return $question->load('options', 'answerKey', 'rubricCriteria');
         });
     }
 
@@ -107,7 +131,7 @@ class ExamService
 
         return DB::transaction(function () use ($exam, $teacher) {
             $version = $exam->currentVersion()->lockForUpdate()->firstOrFail();
-            $questions = $version->questions()->with(['options', 'answerKey'])->get();
+            $questions = $version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
 
             $errors = [];
             if ($questions->isEmpty()) {
@@ -126,6 +150,9 @@ class ExamService
                 if ($q->points <= 0) {
                     $errors[] = "Question {$q->number} must be worth more than zero points.";
                 }
+                if ($q->type === 'problem_solving' && abs($q->answerPoints() + $q->rubricCriteria->sum('max_points') - $q->points) > 0.001) {
+                    $errors[] = "Question {$q->number}: final-answer points plus rubric points must equal the question's points.";
+                }
             }
             if ($errors !== []) {
                 throw ValidationException::withMessages(['exam' => $errors]);
@@ -139,6 +166,43 @@ class ExamService
             ]);
 
             return $exam->fresh();
+        });
+    }
+
+    /**
+     * Start a new draft version from the current locked one (questions, options, keys and
+     * rubrics are copied). Existing submissions stay graded against their original version.
+     * The exam returns to draft and stops accepting submissions until it is published again.
+     */
+    public function newVersion(Exam $exam, User $teacher): Exam
+    {
+        $current = $exam->currentVersion;
+        if (! $current?->isLocked() || ! in_array($exam->status, ['published', 'closed'], true)) {
+            throw ValidationException::withMessages(['exam' => 'A new version can be created only from a published or closed exam.']);
+        }
+
+        return DB::transaction(function () use ($exam, $current, $teacher) {
+            $version = $exam->versions()->create(['version_number' => $current->version_number + 1]);
+
+            foreach ($current->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get() as $q) {
+                $copy = $version->questions()->create($q->only(['number', 'type', 'prompt', 'points', 'config']));
+                foreach ($q->options as $o) {
+                    $copy->options()->create($o->only(['label', 'text', 'position']));
+                }
+                foreach ($q->rubricCriteria as $c) {
+                    $copy->rubricCriteria()->create($c->only(['label', 'description', 'max_points', 'position']));
+                }
+                if ($q->answerKey) {
+                    $copy->answerKey()->create(['correct_values' => $q->answerKey->correct_values]);
+                }
+            }
+
+            $exam->update(['status' => 'draft']);
+            AuditLog::record('exam.version_created', $exam, ['version' => $current->version_number], [
+                'version' => $version->version_number, 'by' => $teacher->id,
+            ]);
+
+            return $exam->fresh('currentVersion');
         });
     }
 

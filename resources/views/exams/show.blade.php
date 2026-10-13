@@ -23,6 +23,12 @@
                         <x-secondary-button type="submit">Close submissions</x-secondary-button>
                     </form>
                 @endif
+                @if ($canManage && in_array($exam->status, ['published', 'closed']))
+                    <form method="POST" action="{{ route('exams.versions.store', $exam) }}" onsubmit="return confirm('Create a new editable version? The exam stops accepting submissions until you publish the new version. Existing submissions keep version {{ $exam->currentVersion->version_number }}.')">
+                        @csrf
+                        <x-secondary-button type="submit">New version</x-secondary-button>
+                    </form>
+                @endif
             </div>
         </div>
     </x-slot>
@@ -73,8 +79,30 @@
                                         <li class="{{ $isKey ? 'font-semibold text-green-700' : '' }}">{{ $opt->label }}. {{ $opt->text ?: '(no text)' }} @if ($isKey)<span aria-label="correct answer">✓</span>@endif</li>
                                     @endforeach
                                 </ul>
-                            @elseif ($showKey)
+                            @elseif ($showKey && $q->type === 'true_false')
                                 <p class="mt-1 text-sm">Key: <span class="font-semibold text-green-700">{{ ucfirst($q->answerKey?->correct_values[0] ?? '—') }}</span></p>
+                            @elseif ($showKey && $q->type === 'identification')
+                                <p class="mt-1 text-sm">Accepted:
+                                    @foreach ($q->answerKey?->correct_values ?? [] as $accepted)
+                                        <span class="me-1 inline-block rounded bg-green-50 px-1.5 font-semibold text-green-700">{{ $accepted }}</span>
+                                    @endforeach
+                                </p>
+                                <p class="text-xs text-gray-500">{{ $q->setting('case_sensitive') ? 'Case-sensitive' : 'Case-insensitive' }}{{ $q->setting('fuzzy') ? ' · near misses flagged for review' : '' }}</p>
+                            @elseif ($showKey && $q->type === 'problem_solving')
+                                @php
+                                    $tol = (float) $q->setting('tolerance', 0);
+                                    $units = $q->setting('units', []);
+                                @endphp
+                                <p class="mt-1 text-sm">Expected: <span class="font-semibold text-green-700">{{ $q->answerKey?->correct_values[0] }} {{ $units[0] ?? '' }}</span>
+                                    <span class="text-xs text-gray-500">{{ $tol > 0 ? '± '.$tol.($q->setting('tolerance_type') === 'percent' ? '%' : '') : 'exact' }}{{ $units ? ' · units: '.implode(', ', $units).($q->setting('unit_required') ? ' (required)' : '') : '' }} · final answer {{ $q->answerPoints() }} pt</span>
+                                </p>
+                                @if ($q->rubricCriteria->isNotEmpty())
+                                    <ul class="mt-1 list-disc ps-5 text-xs text-gray-600">
+                                        @foreach ($q->rubricCriteria as $c)
+                                            <li><span class="font-medium">{{ $c->label }}</span> ({{ $c->max_points }} pt){{ $c->description ? ': '.$c->description : '' }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
                             @endif
                         </div>
                         @if ($canManage && $exam->isDraft())
@@ -104,7 +132,7 @@
                     </x-slot>
                 @endif
 
-                @if ($exam->isDraft())
+                @if ($exam->isDraft() && $submissions->isEmpty())
                     <p class="text-sm text-gray-500">Publish the exam to start recording submissions.</p>
                 @elseif ($submissions->isEmpty())
                     <p class="text-sm text-gray-500">No submissions yet.</p>
@@ -112,12 +140,13 @@
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead class="text-left text-xs uppercase text-gray-500">
-                                <tr><th class="py-2 pe-4">Student</th><th class="pe-4">Source</th><th class="pe-4">Status</th><th class="pe-4 text-right">Open reviews</th><th class="pe-4 text-right">Score</th><th></th></tr>
+                                <tr><th class="py-2 pe-4">Student</th><th class="pe-4">Version</th><th class="pe-4">Source</th><th class="pe-4">Status</th><th class="pe-4 text-right">Open reviews</th><th class="pe-4 text-right">Score</th><th></th></tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
                                 @foreach ($submissions as $s)
                                     <tr>
                                         <td class="py-2 pe-4">{{ $s->student->fullName() }} <span class="block font-mono text-xs text-gray-500">{{ $s->student->student_number }}</span></td>
+                                        <td class="pe-4">v{{ $s->version->version_number }}</td>
                                         <td class="pe-4">{{ ucfirst($s->source) }}</td>
                                         <td class="pe-4">
                                             <x-status-badge :status="$s->status" />

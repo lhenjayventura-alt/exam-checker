@@ -23,6 +23,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::get('/exams/{exam}', [V1\ExamController::class, 'show']);
     Route::post('/exams/{exam}/questions', [V1\ExamController::class, 'storeQuestion']);
     Route::post('/exams/{exam}/publish', [V1\ExamController::class, 'publish']);
+    Route::post('/exams/{exam}/versions', [V1\ExamController::class, 'newVersion']);
 
     Route::post('/exams/{exam}/submissions', [V1\SubmissionController::class, 'store']);
     Route::get('/submissions/{submission}', [V1\SubmissionController::class, 'show']);

@@ -44,6 +44,12 @@ class GradingResult extends Model
         return $this->hasOne(ReviewTask::class)->where('status', 'open');
     }
 
+    public function details(): HasMany
+    {
+        // Final answer (no criterion) first, then criteria in rubric order.
+        return $this->hasMany(GradingDetail::class)->orderByRaw('rubric_criterion_id is not null')->orderBy('rubric_criterion_id');
+    }
+
     public function events(): HasMany
     {
         return $this->hasMany(GradingEvent::class)->orderBy('id');

@@ -36,10 +36,10 @@ class ExamController extends Controller
 
         $exam->load(['offering.course', 'offering.term', 'currentVersion']);
         $canManage = $request->user()->can('manage', $exam);
-        $questions = $exam->currentVersion->questions()->with(['options', 'answerKey'])->get();
+        $questions = $exam->currentVersion->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
 
         $submissions = $exam->submissions()
-            ->with(['student', 'result'])
+            ->with(['student', 'result', 'version'])
             ->withCount(['reviewTasks as open_reviews' => fn ($q) => $q->where('review_tasks.status', 'open')])
             ->get()
             ->sortBy(fn ($s) => $s->student->last_name.' '.$s->student->first_name);
@@ -70,6 +70,14 @@ class ExamController extends Controller
         $this->exams->publish($exam, $request->user());
 
         return back()->with('status', 'Exam published. Its questions and answer key are now locked, and submissions are open.');
+    }
+
+    public function newVersion(Exam $exam, Request $request): RedirectResponse
+    {
+        $this->authorize('manage', $exam);
+        $exam = $this->exams->newVersion($exam, $request->user());
+
+        return back()->with('status', "Version {$exam->currentVersion->version_number} created as a draft from the previous version. Edit it, then publish. Earlier submissions keep their original version.");
     }
 
     public function close(Exam $exam): RedirectResponse

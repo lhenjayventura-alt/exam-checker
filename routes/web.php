@@ -26,6 +26,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/offerings/{offering}', [OfferingController::class, 'show'])->name('offerings.show');
     Route::post('/offerings/{offering}/roster', [RosterController::class, 'store'])->name('offerings.roster.store');
     Route::delete('/offerings/{offering}/roster/{student}', [RosterController::class, 'destroy'])->name('offerings.roster.destroy');
+    Route::post('/offerings/{offering}/roster/import', [RosterController::class, 'import'])->name('offerings.roster.import');
+    Route::get('/roster-template.csv', [RosterController::class, 'template'])->name('roster.template');
 
     // Examinations and questions
     Route::get('/offerings/{offering}/exams/create', [ExamController::class, 'create'])->name('exams.create');
@@ -34,6 +36,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::patch('/exams/{exam}', [ExamController::class, 'update'])->name('exams.update');
     Route::post('/exams/{exam}/publish', [ExamController::class, 'publish'])->name('exams.publish');
     Route::post('/exams/{exam}/close', [ExamController::class, 'close'])->name('exams.close');
+    Route::post('/exams/{exam}/versions', [ExamController::class, 'newVersion'])->name('exams.versions.store');
     Route::post('/exams/{exam}/questions', [QuestionController::class, 'store'])->name('exams.questions.store');
     Route::delete('/exams/{exam}/questions/{question}', [QuestionController::class, 'destroy'])->name('exams.questions.destroy');
 

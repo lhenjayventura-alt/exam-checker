@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\OfferingResource;
 use App\Http\Resources\StudentResource;
 use App\Models\CourseOffering;
+use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -27,7 +28,7 @@ class OfferingController extends Controller
         return StudentResource::collection(
             $offering->students()
                 ->when($term, fn ($q) => $q->where(fn ($w) => $w
-                    ->where('student_number', 'like', "{$term}%")
+                    ->where('student_number', 'like', Student::canonicalNumber($term).'%')
                     ->orWhere('last_name', 'like', "{$term}%")
                     ->orWhere('first_name', 'like', "{$term}%")))
                 ->orderBy('last_name')->orderBy('first_name')->get()

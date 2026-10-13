@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\CourseOffering;
 use App\Models\Student;
+use App\Services\RosterImportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RosterController extends Controller
 {
@@ -20,7 +22,7 @@ class RosterController extends Controller
     {
         $this->authorize('manageRoster', $offering);
 
-        $existing = Student::where('student_number', trim((string) $request->input('student_number')))->first();
+        $existing = Student::withNumber($request->input('student_number'))->first();
         $data = $request->validate([
             'student_number' => ['required', 'string', 'max:30', 'regex:/^[A-Za-z0-9\-]+$/'],
             'last_name' => [Rule::requiredIf($existing === null), 'nullable', 'string', 'max:100'],
@@ -47,6 +49,32 @@ class RosterController extends Controller
             : "Student {$student->fullName()} created and added to the roster.";
 
         return back()->with('status', $message);
+    }
+
+    public function import(CourseOffering $offering, Request $request, RosterImportService $importer): RedirectResponse
+    {
+        $this->authorize('manageRoster', $offering);
+        $request->validate([
+            'roster_file' => ['required', 'file', 'mimes:csv,txt', 'mimetypes:text/csv,text/plain,application/csv,application/vnd.ms-excel', 'max:1024'],
+        ], ['roster_file.mimes' => 'Upload a .csv file.', 'roster_file.max' => 'The file must not be larger than 1 MB.']);
+
+        $report = $importer->import($offering, $request->file('roster_file')->getRealPath());
+        if (! $report['ok']) {
+            return back()->withErrors(['roster_file' => array_slice($report['errors'], 0, 20)])
+                ->with('import_error_count', count($report['errors']));
+        }
+
+        $message = "Roster imported: {$report['created']} new student(s) created, {$report['linked']} existing student(s) added, {$report['already']} already on the roster.";
+
+        return back()->with('status', $message)->with('import_warnings', $report['mismatched']);
+    }
+
+    /** CSV template for roster import. */
+    public function template(): StreamedResponse
+    {
+        return response()->streamDownload(function () {
+            echo implode(',', RosterImportService::HEADERS).PHP_EOL;
+        }, 'roster-template.csv', ['Content-Type' => 'text/csv']);
     }
 
     public function destroy(CourseOffering $offering, Student $student, Request $request): RedirectResponse

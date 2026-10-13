@@ -2,6 +2,7 @@
 
 namespace App\Services\Grading;
 
+use App\Models\GradingDetail;
 use App\Models\GradingEvent;
 use App\Models\GradingResult;
 use App\Models\Question;
@@ -32,7 +33,7 @@ class GradingOrchestrator
                 return $submission;
             }
 
-            $questions = $submission->version->questions()->with(['options', 'answerKey'])->get();
+            $questions = $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
             $answers = $submission->answers()->get()->keyBy('question_id');
             $existing = $submission->gradingResults()->with('openReviewTask')->get()->keyBy('question_id');
 
@@ -82,6 +83,8 @@ class GradingOrchestrator
             'status' => $outcome->needsReview ? 'needs_review' : 'auto',
         ])->save();
 
+        $this->syncAutoDetails($result, $outcome);
+
         if ($isNew || $result->wasChanged(['proposed_score', 'awarded_score', 'status'])) {
             GradingEvent::create([
                 'grading_result_id' => $result->id,
@@ -101,6 +104,17 @@ class GradingOrchestrator
         } elseif (! $outcome->needsReview && $openTask !== null) {
             // The condition that required review no longer applies; close the task automatically.
             $openTask->update(['status' => 'resolved', 'resolved_at' => now()]);
+        }
+    }
+
+    /** Store automatically scored criterion rows (the final answer); teacher-scored rows are untouched. */
+    public function syncAutoDetails(GradingResult $result, GradeOutcome $outcome): void
+    {
+        foreach ($outcome->details as $detail) {
+            GradingDetail::updateOrCreate(
+                ['grading_result_id' => $result->id, 'rubric_criterion_id' => null],
+                ['label' => $detail['label'], 'max_points' => $detail['max_points'], 'auto_score' => $detail['score'], 'score' => $detail['score']],
+            );
         }
     }
 

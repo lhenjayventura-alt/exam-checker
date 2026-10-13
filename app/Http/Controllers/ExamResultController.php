@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ExamResultsExport;
+use App\Exports\ScoreSheet;
 use App\Models\Exam;
 use App\Models\Submission;
 use App\Services\ExamAnalyticsService;
@@ -9,6 +11,8 @@ use App\Services\ExamResultService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ExamResultController extends Controller
@@ -22,17 +26,24 @@ class ExamResultController extends Controller
     {
         $this->authorize('view', $exam);
 
-        $exam->load(['offering.course', 'offering.term', 'currentVersion']);
+        $exam->load(['offering.course', 'offering.term', 'currentVersion', 'versions']);
+        $version = $request->filled('version')
+            ? $exam->versions->firstWhere('version_number', $request->integer('version'))
+            : $this->analytics->defaultVersion($exam);
+        abort_if($version === null, 404);
 
         return view('exams.results', [
             'exam' => $exam,
-            'results' => $exam->results()->with('student')->get()
+            'version' => $version,
+            'results' => $exam->results()->with(['student', 'submission'])
+                ->whereHas('submission', fn ($q) => $q->where('exam_version_id', $version->id))->get()
                 ->sortBy(fn ($r) => $r->student->last_name.' '.$r->student->first_name),
-            'summary' => $this->analytics->summary($exam),
-            'items' => $this->analytics->itemAnalysis($exam),
+            'summary' => $this->analytics->summary($exam, $version),
+            'items' => $this->analytics->itemAnalysis($exam, $version),
             'unfinalized' => $exam->submissions()->where('status', '!=', 'finalized')->count(),
             'canManage' => $request->user()->can('manage', $exam),
             'showKey' => $request->user()->can('grade', $exam),
+            'hasUnreleased' => $exam->results()->whereNull('released_at')->exists(),
         ]);
     }
 
@@ -60,28 +71,27 @@ class ExamResultController extends Controller
         return back()->with('status', "{$count} result(s) released.");
     }
 
-    /** CSV class score sheet of finalized results. */
-    public function export(Exam $exam): StreamedResponse
+    /** Class score sheet of finalized results (all versions): CSV, or Excel with item-analysis sheets. */
+    public function export(Exam $exam, Request $request): StreamedResponse|BinaryFileResponse
     {
         $this->authorize('view', $exam);
 
         $exam->load('offering.course');
-        $filename = str($exam->offering->course->code.'-'.$exam->offering->section.'-'.$exam->title)->slug().'-results.csv';
-        $results = $exam->results()->with('student')->get()->sortBy(fn ($r) => $r->student->last_name.' '.$r->student->first_name);
+        $base = str($exam->offering->course->code.'-'.$exam->offering->section.'-'.$exam->title)->slug().'-results';
 
-        return response()->streamDownload(function () use ($results) {
+        if ($request->query('format') === 'xlsx') {
+            return Excel::download(new ExamResultsExport($exam), $base.'.xlsx');
+        }
+
+        $rows = ScoreSheet::rows($exam);
+
+        return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Student Number', 'Last Name', 'First Name', 'Score', 'Max', 'Percentage', 'Passed', 'Finalized At', 'Released At']);
-            // Prefix cells that a spreadsheet would treat as formulas.
-            $safe = fn ($v) => is_string($v) && preg_match('/^[=+\-@\t\r]/', $v) ? "'".$v : $v;
-            foreach ($results as $r) {
-                fputcsv($out, array_map($safe, [
-                    $r->student->student_number, $r->student->last_name, $r->student->first_name,
-                    $r->total_score, $r->max_score, $r->percentage, $r->passed ? 'Yes' : 'No',
-                    $r->finalized_at?->toDateTimeString(), $r->released_at?->toDateTimeString(),
-                ]));
+            fputcsv($out, ScoreSheet::HEADINGS);
+            foreach ($rows as $row) {
+                fputcsv($out, $row);
             }
             fclose($out);
-        }, $filename, ['Content-Type' => 'text/csv']);
+        }, $base.'.csv', ['Content-Type' => 'text/csv']);
     }
 }

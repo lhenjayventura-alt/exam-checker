@@ -128,11 +128,11 @@ class AuthorizationTest extends TestCase
         $admin = $this->userWithRole(Role::ADMIN);
         $this->actingAs($admin);
 
-        $this->post(route('admin.programs.store'), ['code' => 'BSCPE', 'name' => 'Computer Engineering'])->assertSessionHasNoErrors();
-        $this->post(route('admin.terms.store'), ['academic_year' => '2026-2027', 'term' => 'first', 'is_current' => 1])->assertSessionHasNoErrors();
+        $this->post(route('admin.programs.store'), ['code' => 'BSCPE', 'name' => 'Computer Engineering'])->assertSessionHasNoErrors()->assertRedirect();
+        $this->post(route('admin.terms.store'), ['academic_year' => '2026-2027', 'term' => 'first', 'is_current' => 1])->assertSessionHasNoErrors()->assertRedirect();
         $this->post(route('admin.terms.store'), ['academic_year' => '2026-2028', 'term' => 'second'])->assertSessionHasErrors('academic_year');
         $program = Program::where('code', 'BSCPE')->firstOrFail();
-        $this->post(route('admin.courses.store'), ['program_id' => $program->id, 'code' => 'CPE101', 'title' => 'Intro'])->assertSessionHasNoErrors();
+        $this->post(route('admin.courses.store'), ['program_id' => $program->id, 'code' => 'CPE101', 'title' => 'Intro'])->assertSessionHasNoErrors()->assertRedirect();
 
         // Chair role without a program is rejected.
         $this->post(route('admin.users.store'), [
@@ -143,7 +143,7 @@ class AuthorizationTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'Teach', 'email' => 'teach@example.test', 'password' => 'Secret123!', 'password_confirmation' => 'Secret123!',
             'is_active' => 1, 'roles' => [Role::TEACHER],
-        ])->assertSessionHasNoErrors();
+        ])->assertSessionHasNoErrors()->assertRedirect();
         $teacher = User::where('email', 'teach@example.test')->firstOrFail();
         $this->assertTrue($teacher->isTeacher());
 
@@ -159,7 +159,7 @@ class AuthorizationTest extends TestCase
             'academic_term_id' => AcademicTerm::first()->id,
             'section' => 'CPE-1A',
             'teacher_ids' => [$teacher->id],
-        ])->assertSessionHasNoErrors();
+        ])->assertSessionHasNoErrors()->assertRedirect();
         $this->assertTrue(CourseOffering::firstOrFail()->isTaughtBy($teacher));
 
         // An admin cannot remove their own admin role.

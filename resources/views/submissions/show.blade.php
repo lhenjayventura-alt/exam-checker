@@ -75,7 +75,15 @@
                                     @endif
                                 </span>
                                 @if ($canGrade)
-                                    <span class="min-w-[6rem]">Key: <span class="font-mono text-green-700">{{ $q->type === 'true_false' ? ($q->answerKey?->correct_values[0] ?? '—') : implode(',', $q->answerKey?->correct_values ?? []) }}</span></span>
+                                    @php
+                                        $keyText = match ($q->type) {
+                                            'true_false' => $q->answerKey?->correct_values[0] ?? '—',
+                                            'identification' => implode(' / ', $q->answerKey?->correct_values ?? []),
+                                            'problem_solving' => ($q->answerKey?->correct_values[0] ?? '—').' '.($q->setting('units')[0] ?? ''),
+                                            default => implode(',', $q->answerKey?->correct_values ?? []),
+                                        };
+                                    @endphp
+                                    <span class="min-w-[6rem]">Key: <span class="font-mono text-green-700">{{ $keyText }}</span></span>
                                 @endif
                                 <span class="min-w-[7rem] font-semibold">
                                     {{ $result?->awarded_score !== null ? $result->awarded_score : '—' }} / {{ rtrim(rtrim(number_format($q->points, 2), '0'), '.') }}
@@ -94,6 +102,23 @@
                                 @if ($result && $canGrade)
                                     <p class="text-gray-700"><span class="font-medium">Grading explanation:</span> {{ $result->explanation }} <span class="text-xs text-gray-400">({{ $result->grader }})</span></p>
                                     @if ($result->feedback)<p class="text-gray-700"><span class="font-medium">Feedback:</span> {{ $result->feedback }}</p>@endif
+                                    @if ($result->details->isNotEmpty())
+                                        <table class="text-xs">
+                                            <thead class="text-left text-gray-500"><tr><th class="pe-4">Criterion</th><th class="pe-4 text-right">Score</th><th>Comment</th></tr></thead>
+                                            <tbody>
+                                                @foreach ($result->details as $d)
+                                                    <tr>
+                                                        <td class="pe-4">{{ $d->label }}</td>
+                                                        <td class="pe-4 text-right">{{ $d->score ?? '—' }} / {{ $d->max_points }}@if ($d->isFinalAnswer() && $d->auto_score !== null && $d->score !== $d->auto_score) <span class="text-gray-400">(auto {{ $d->auto_score }})</span>@endif</td>
+                                                        <td>{{ $d->comment }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                        @if ($result->status === 'overridden' && abs($result->details->sum('score') - (float) $result->awarded_score) > 0.001)
+                                            <p class="text-xs text-purple-700">The awarded score was overridden and no longer equals the criterion total.</p>
+                                        @endif
+                                    @endif
                                 @endif
 
                                 @if ($canGrade && $result && ! $submission->isFinalized())
@@ -103,7 +128,7 @@
                                             <input type="hidden" name="action" value="correct_answer">
                                             <p class="font-medium text-gray-800">Correct the answer</p>
                                             <p class="text-xs text-gray-500">Re-grades automatically. The original answer is kept.</p>
-                                            <input name="answer" maxlength="50" value="{{ $answer?->effectiveValue() }}" class="block w-full rounded-md border-gray-300 font-mono uppercase text-sm" placeholder="Blank">
+                                            <input name="answer" maxlength="255" value="{{ $answer?->effectiveValue() }}" class="block w-full rounded-md border-gray-300 font-mono text-sm {{ in_array($q->type, ['multiple_choice', 'true_false']) ? 'uppercase' : '' }}" placeholder="Blank" aria-label="Corrected answer">
                                             <input name="reason" maxlength="1000" class="block w-full rounded-md border-gray-300 text-sm" placeholder="Note (optional)">
                                             <x-secondary-button type="submit">Save correction</x-secondary-button>
                                         </form>
@@ -119,7 +144,36 @@
                                             <x-secondary-button type="submit">Save score</x-secondary-button>
                                         </form>
 
-                                        @if ($task && $result->proposed_score !== null)
+                                        @if ($q->rubricCriteria->isNotEmpty())
+                                            @php
+                                                $existing = $result->details->keyBy('rubric_criterion_id');
+                                                $answerDetail = $result->details->firstWhere('rubric_criterion_id', null);
+                                            @endphp
+                                            <form method="POST" action="{{ route('grading-results.update', $result) }}" class="space-y-2 rounded-md bg-indigo-50 p-3 lg:col-span-3">
+                                                @csrf @method('PATCH')
+                                                <input type="hidden" name="action" value="score_rubric">
+                                                <p class="font-medium text-gray-800">Score the solution rubric</p>
+                                                <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                                    @if ($q->answerPoints() > 0)
+                                                        <label class="block text-xs">
+                                                            <span class="font-medium">Final answer</span> (0–{{ $q->answerPoints() }}, auto: {{ $answerDetail?->auto_score ?? 'not readable' }})
+                                                            <input name="answer_score" type="number" step="0.01" min="0" max="{{ $q->answerPoints() }}" value="{{ $answerDetail?->score }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                        </label>
+                                                    @endif
+                                                    @foreach ($q->rubricCriteria as $c)
+                                                        <div class="text-xs">
+                                                            <label for="crit-{{ $result->id }}-{{ $c->id }}"><span class="font-medium">{{ $c->label }}</span> (0–{{ $c->max_points }})</label>
+                                                            @if ($c->description)<span class="block text-gray-500">{{ $c->description }}</span>@endif
+                                                            <input id="crit-{{ $result->id }}-{{ $c->id }}" name="criteria[{{ $c->id }}][score]" type="number" step="0.01" min="0" max="{{ $c->max_points }}" required value="{{ $existing->get($c->id)?->score }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                            <input name="criteria[{{ $c->id }}][comment]" maxlength="1000" value="{{ $existing->get($c->id)?->comment }}" placeholder="Comment (optional)" aria-label="Comment for {{ $c->label }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                                <input name="reason" maxlength="1000" class="block w-full rounded-md border-gray-300 text-sm" placeholder="Reason (required only if you change the final-answer score)">
+                                                <input name="feedback" maxlength="2000" value="{{ $result->feedback }}" class="block w-full rounded-md border-gray-300 text-sm" placeholder="Feedback to student (optional)">
+                                                <x-primary-button>Save rubric scores</x-primary-button>
+                                            </form>
+                                        @elseif ($task && $result->proposed_score !== null)
                                             <form method="POST" action="{{ route('grading-results.update', $result) }}" class="space-y-2 rounded-md bg-gray-50 p-3">
                                                 @csrf @method('PATCH')
                                                 <input type="hidden" name="action" value="confirm">

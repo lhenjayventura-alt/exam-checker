@@ -37,7 +37,7 @@ class GradingController extends Controller
     {
         $this->authorize('grade', $gradingResult->submission->exam);
 
-        return new GradingResultResource($gradingResult->load(['question', 'openReviewTask', 'events']));
+        return new GradingResultResource($gradingResult->load(['question', 'openReviewTask', 'events', 'details']));
     }
 
     public function update(GradingResult $gradingResult, UpdateGradingResultRequest $request): GradingResultResource
@@ -45,7 +45,7 @@ class GradingController extends Controller
         $this->authorize('grade', $gradingResult->submission->exam);
         $result = $this->reviews->apply($gradingResult, $request->validated(), $request->user());
 
-        return new GradingResultResource($result->load(['question', 'openReviewTask', 'events']));
+        return new GradingResultResource($result->load(['question', 'openReviewTask', 'events', 'details']));
     }
 
     public function finalize(Submission $submission, Request $request): ExamResultResource

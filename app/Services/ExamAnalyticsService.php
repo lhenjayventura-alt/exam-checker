@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Exam;
+use App\Models\ExamVersion;
 use App\Models\GradingResult;
 use App\Models\RecognizedAnswer;
 use Illuminate\Support\Collection;
@@ -19,6 +20,8 @@ use Illuminate\Support\Collection;
  *    below MIN_N_DISCRIMINATION examinees.
  *  - Distractor analysis: count and percentage of examinees selecting each option, from the
  *    effective (teacher-corrected if applicable) answer.
+ *
+ * Statistics are computed per exam version, because versions can differ in questions and points.
  */
 class ExamAnalyticsService
 {
@@ -27,9 +30,26 @@ class ExamAnalyticsService
     /** Below this many examinees, statistics are flagged as unreliable. */
     public const SMALL_SAMPLE_N = 30;
 
-    public function summary(Exam $exam): array
+    /** The version analysed by default: the newest version that has finalized results, else the current one. */
+    public function defaultVersion(Exam $exam): ?ExamVersion
     {
-        $results = $exam->results()->get();
+        return $exam->versions()
+            ->whereHas('submissions', fn ($q) => $q->where('status', 'finalized'))
+            ->orderByDesc('version_number')->first()
+            ?? $exam->currentVersion;
+    }
+
+    private function resultsFor(Exam $exam, ?ExamVersion $version, array $columns = ['*']): Collection
+    {
+        return $exam->results()
+            ->when($version, fn ($q) => $q->whereHas('submission', fn ($s) => $s->where('exam_version_id', $version->id)))
+            ->get($columns);
+    }
+
+    public function summary(Exam $exam, ?ExamVersion $version = null): array
+    {
+        $version ??= $this->defaultVersion($exam);
+        $results = $this->resultsFor($exam, $version);
         $percentages = $results->pluck('percentage')->map(fn ($v) => (float) $v)->sort()->values();
         $scores = $results->pluck('total_score')->map(fn ($v) => (float) $v)->sort()->values();
         $n = $scores->count();
@@ -54,18 +74,19 @@ class ExamAnalyticsService
                 'count' => $count,
             ])->all(),
             'small_sample' => $n < self::SMALL_SAMPLE_N,
+            'version' => $version?->version_number,
         ];
     }
 
-    public function itemAnalysis(Exam $exam): array
+    public function itemAnalysis(Exam $exam, ?ExamVersion $version = null): array
     {
-        $results = $exam->results()->get(['submission_id', 'total_score']);
+        $version ??= $this->defaultVersion($exam);
+        $results = $this->resultsFor($exam, $version, ['submission_id', 'total_score']);
         $n = $results->count();
-        $version = $exam->currentVersion;
         $questions = $version ? $version->questions()->with(['options', 'answerKey'])->get() : collect();
 
         if ($n === 0 || $questions->isEmpty()) {
-            return ['n' => $n, 'items' => [], 'small_sample' => true, 'discrimination_computed' => false];
+            return ['n' => $n, 'items' => [], 'small_sample' => true, 'discrimination_computed' => false, 'version' => $version?->version_number];
         }
 
         $submissionIds = $results->pluck('submission_id');
@@ -87,7 +108,7 @@ class ExamAnalyticsService
                 ->map(fn ($g) => $g->max_points > 0 ? $g->awarded_score / $g->max_points : 0.0);
 
             $all = $normalized($qGrades->keys()->all());
-            $partial = $q->isMultipleSelect() && $q->setting('partial_credit') === 'proportional';
+            $partial = $q->allowsPartialCredit();
 
             $item = [
                 'question_id' => $q->id,
@@ -116,6 +137,7 @@ class ExamAnalyticsService
             'items' => $items,
             'small_sample' => $n < self::SMALL_SAMPLE_N,
             'discrimination_computed' => $computeD,
+            'version' => $version->version_number,
         ];
     }
 

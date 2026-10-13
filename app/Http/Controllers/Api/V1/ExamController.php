@@ -47,7 +47,7 @@ class ExamController extends Controller
     public function show(Exam $exam, Request $request): ExamResource
     {
         $this->authorize('view', $exam);
-        $exam->load(['offering.course', 'offering.term', 'currentVersion.questions.options']);
+        $exam->load(['offering.course', 'offering.term', 'currentVersion.questions.options', 'currentVersion.questions.rubricCriteria']);
         // The answer key is included only for users with grading rights on this exam.
         if ($request->user()->can('grade', $exam)) {
             $exam->load('currentVersion.questions.answerKey');
@@ -62,6 +62,15 @@ class ExamController extends Controller
         $question = $this->exams->addQuestion($exam, $request->validated());
 
         return (new QuestionResource($question))->response()->setStatusCode(201);
+    }
+
+    /** Clone the locked version into a new draft version. */
+    public function newVersion(Exam $exam, Request $request): JsonResponse
+    {
+        $this->authorize('manage', $exam);
+        $exam = $this->exams->newVersion($exam, $request->user());
+
+        return (new ExamResource($exam->load(['offering.course', 'offering.term', 'currentVersion'])))->response()->setStatusCode(201);
     }
 
     public function publish(Exam $exam, Request $request): ExamResource

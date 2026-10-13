@@ -55,6 +55,31 @@
                         </div>
                         <p class="text-xs text-gray-500 sm:col-span-5">If the student number already exists, the existing record is added and the names are ignored.</p>
                     </form>
+
+                    <form method="POST" action="{{ route('offerings.roster.import', $offering) }}" enctype="multipart/form-data" class="mb-6 flex flex-wrap items-end gap-3 rounded-md bg-gray-50 p-4">
+                        @csrf
+                        <div>
+                            <x-input-label for="roster_file" value="Import from CSV" />
+                            <input id="roster_file" name="roster_file" type="file" accept=".csv,text/csv" required class="mt-1 block text-sm">
+                        </div>
+                        <x-secondary-button type="submit">Import</x-secondary-button>
+                        <p class="w-full text-xs text-gray-500">
+                            Columns: student_number, last_name, first_name, middle_name (optional). Up to {{ \App\Services\RosterImportService::MAX_ROWS }} rows, 1 MB.
+                            Nothing is imported if any row has an error. <a href="{{ route('roster.template') }}" class="text-indigo-700 hover:underline">Download template</a>
+                        </p>
+                    </form>
+
+                    @if (session('import_warnings'))
+                        <div class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            <p class="font-medium">Check these existing records. The file's names differ from the names on file, and the names on file were kept:</p>
+                            <ul class="mt-1 list-disc ps-5">
+                                @foreach (session('import_warnings') as $warning)<li>{{ $warning }}</li>@endforeach
+                            </ul>
+                        </div>
+                    @endif
+                    @if (session('import_error_count') > 20)
+                        <p class="mb-4 text-sm text-red-700">Showing the first 20 of {{ session('import_error_count') }} errors.</p>
+                    @endif
                 @endif
 
                 @if ($students->isEmpty())

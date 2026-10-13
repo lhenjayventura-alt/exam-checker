@@ -44,17 +44,17 @@ class ExamWorkflowTest extends TestCase
             'type' => 'multiple_choice', 'points' => 2,
             'options' => [['label' => 'A', 'text' => 'x'], ['label' => 'B', 'text' => 'y'], ['label' => 'C', 'text' => '']],
             'correct' => ['C'],
-        ])->assertSessionHasNoErrors();
+        ])->assertSessionHasNoErrors()->assertRedirect();
         $this->post(route('exams.questions.store', $exam), [
             'type' => 'true_false', 'points' => 1, 'correct' => ['false'],
-        ])->assertSessionHasNoErrors();
+        ])->assertSessionHasNoErrors()->assertRedirect();
 
         $questions = $exam->currentVersion->questions()->with('answerKey')->get();
         $this->assertSame([1, 2], $questions->pluck('number')->all());
         $this->assertSame(['C'], $questions[0]->answerKey->correct_values);
         $this->assertSame(['false'], $questions[1]->answerKey->correct_values);
 
-        $this->post(route('exams.publish', $exam))->assertSessionHasNoErrors();
+        $this->post(route('exams.publish', $exam))->assertSessionHasNoErrors()->assertRedirect();
         $exam->refresh();
         $this->assertSame('published', $exam->status);
         $this->assertNotNull($exam->currentVersion->locked_at);
@@ -120,7 +120,7 @@ class ExamWorkflowTest extends TestCase
         $this->assertDatabaseHas('recognized_answers', ['submission_id' => $submission->id, 'raw_value' => 'a, b, c', 'normalized_value' => 'A,B,C']);
         $this->assertSame(3, GradingEvent::where('event', 'auto_graded')->count());
 
-        $this->post(route('submissions.finalize', $submission))->assertSessionHasNoErrors();
+        $this->post(route('submissions.finalize', $submission))->assertSessionHasNoErrors()->assertRedirect();
         $result = ExamResult::firstOrFail();
         $this->assertSame(3.0, $result->total_score);
         $this->assertSame(4.0, $result->max_score);
@@ -151,7 +151,7 @@ class ExamWorkflowTest extends TestCase
 
         // Correcting the answer re-grades deterministically and keeps the original.
         $this->patch(route('grading-results.update', $q1), ['action' => 'correct_answer', 'answer' => 'b', 'reason' => 'Erasure on A'])
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasNoErrors()->assertRedirect();
         $q1->refresh();
         $this->assertSame(1.0, $q1->awarded_score);
         $this->assertSame('reviewed', $q1->status);
@@ -161,7 +161,7 @@ class ExamWorkflowTest extends TestCase
         $this->patch(route('grading-results.update', $q3), ['action' => 'override', 'score' => 1])->assertSessionHasErrors('reason');
         $this->patch(route('grading-results.update', $q3), ['action' => 'override', 'score' => 5, 'reason' => 'x'])->assertSessionHasErrors('score');
         $this->patch(route('grading-results.update', $q3), ['action' => 'override', 'score' => 1, 'reason' => 'Student wrote "Tama"'])
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasNoErrors()->assertRedirect();
 
         $event = GradingEvent::where('event', 'score_overridden')->firstOrFail();
         $this->assertSame($teacher->id, $event->user_id);
@@ -173,7 +173,7 @@ class ExamWorkflowTest extends TestCase
         $this->assertSame(0, ReviewTask::where('status', 'open')->count());
         $this->assertSame('graded', $submission->fresh()->status);
 
-        $this->post(route('submissions.finalize', $submission))->assertSessionHasNoErrors();
+        $this->post(route('submissions.finalize', $submission))->assertSessionHasNoErrors()->assertRedirect();
         $this->assertSame(4.0, ExamResult::firstOrFail()->total_score);
     }
 
@@ -198,7 +198,7 @@ class ExamWorkflowTest extends TestCase
             $this->post(route('exams.submissions.store', $exam), ['student_id' => $student->id, 'answers' => [1 => 'B', 2 => 'A,C', 3 => 'F']]);
         }
 
-        $this->post(route('exams.finalize-all', $exam))->assertSessionHasNoErrors();
+        $this->post(route('exams.finalize-all', $exam))->assertSessionHasNoErrors()->assertRedirect();
         $this->assertSame(3, ExamResult::count());
 
         $q1 = $this->resultFor(Submission::firstOrFail(), 1);
@@ -206,7 +206,7 @@ class ExamWorkflowTest extends TestCase
             ->assertSessionHasErrors('submission');
         $this->assertSame(1.0, $q1->fresh()->awarded_score);
 
-        $this->post(route('exams.release', $exam))->assertSessionHasNoErrors();
+        $this->post(route('exams.release', $exam))->assertSessionHasNoErrors()->assertRedirect();
         $this->assertSame(3, ExamResult::whereNotNull('released_at')->where('released_by', $teacher->id)->count());
         $this->post(route('exams.release', $exam))->assertSessionHasErrors('exam'); // nothing left to release
     }

@@ -38,7 +38,7 @@ class SubmissionController extends Controller
         $data = $request->validate([
             'student_id' => ['required', 'integer', 'exists:students,id'],
             'answers' => ['array'],
-            'answers.*' => ['nullable', 'string', 'max:50'],
+            'answers.*' => ['nullable', 'string', 'max:255'],
         ]);
 
         $submission = $this->submissions->createDigital(
@@ -56,11 +56,11 @@ class SubmissionController extends Controller
 
         $submission->load(['exam.offering.course', 'student', 'result', 'version']);
         $answers = $submission->answers()->get()->keyBy('question_id');
-        $results = $submission->gradingResults()->with(['openReviewTask', 'events.user'])->get()->keyBy('question_id');
+        $results = $submission->gradingResults()->with(['openReviewTask', 'events.user', 'details'])->get()->keyBy('question_id');
 
         return view('submissions.show', [
             'submission' => $submission,
-            'questions' => $submission->version->questions()->with(['options', 'answerKey'])->get(),
+            'questions' => $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get(),
             'answers' => $answers,
             'results' => $results,
             'canGrade' => request()->user()->can('grade', $submission->exam),

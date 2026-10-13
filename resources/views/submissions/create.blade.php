@@ -30,17 +30,28 @@
 
                         <div>
                             <p class="mb-2 text-sm text-gray-600">
-                                Type the letter(s) for multiple choice (e.g. <code>B</code> or <code>A,C</code>) and <code>T</code>/<code>F</code> for true or false.
+                                Type the letter(s) for multiple choice (e.g. <code>B</code> or <code>A,C</code>), <code>T</code>/<code>F</code> for true or false,
+                                the written term for identification, and the final answer with its unit for problem solving (e.g. <code>4.7 kΩ</code>, <code>1.2e-3 A</code>).
                                 Leave a box empty for a blank answer. Unclear responses are sent to review instead of being scored.
                             </p>
                             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                                 @foreach ($questions as $q)
-                                    <label class="block">
+                                    @php
+                                        $short = in_array($q->type, ['multiple_choice', 'true_false'], true);
+                                        $hint = match ($q->type) {
+                                            'true_false' => 'T/F',
+                                            'multiple_choice' => $q->options->pluck('label')->join(''),
+                                            'identification' => 'text',
+                                            'problem_solving' => 'final answer'.($q->setting('units') ? ' + unit' : ''),
+                                            default => '',
+                                        };
+                                    @endphp
+                                    <label class="block {{ $short ? '' : 'col-span-2' }}">
                                         <span class="text-xs font-medium text-gray-700">{{ $q->number }}
-                                            <span class="text-gray-400">{{ $q->type === 'true_false' ? 'T/F' : $q->options->pluck('label')->join('') }}</span>
+                                            <span class="text-gray-400">{{ $hint }}</span>
                                         </span>
-                                        <input type="text" name="answers[{{ $q->number }}]" aria-label="Answer to question {{ $q->number }}" value="{{ old('answers.'.$q->number) }}" maxlength="50" autocomplete="off"
-                                               class="mt-1 block w-full rounded-md border-gray-300 text-center font-mono uppercase shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <input type="text" name="answers[{{ $q->number }}]" aria-label="Answer to question {{ $q->number }}" value="{{ old('answers.'.$q->number) }}" maxlength="255" autocomplete="off"
+                                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 {{ $short ? 'text-center font-mono uppercase' : '' }}">
                                     </label>
                                 @endforeach
                             </div>

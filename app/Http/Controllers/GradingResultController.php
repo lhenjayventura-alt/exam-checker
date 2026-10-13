@@ -22,6 +22,7 @@ class GradingResultController extends Controller
             'correct_answer' => "Question {$number}: answer corrected and re-graded ({$result->awarded_score}/{$result->max_points}).",
             'override' => "Question {$number}: score set to {$result->awarded_score}/{$result->max_points}.",
             'confirm' => "Question {$number}: proposed score confirmed.",
+            'score_rubric' => "Question {$number}: rubric scored ({$result->awarded_score}/{$result->max_points}).",
         };
 
         return back()->with('status', $message);

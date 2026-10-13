@@ -22,6 +22,14 @@ class GradingResultResource extends JsonResource
             'status' => $this->status,
             'explanation' => $this->explanation,
             'feedback' => $this->feedback,
+            'details' => $this->whenLoaded('details', fn () => $this->details->map(fn ($d) => [
+                'rubric_criterion_id' => $d->rubric_criterion_id,
+                'label' => $d->label,
+                'max_points' => $d->max_points,
+                'auto_score' => $d->auto_score,
+                'score' => $d->score,
+                'comment' => $d->comment,
+            ])),
             'review_reason' => $this->whenLoaded('openReviewTask', fn () => $this->openReviewTask?->reason),
             'history' => $this->whenLoaded('events', fn () => $this->events->map(fn ($e) => [
                 'event' => $e->event,

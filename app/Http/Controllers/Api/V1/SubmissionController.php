@@ -30,12 +30,12 @@ class SubmissionController extends Controller
             'student_id' => ['required_without:student_number', 'nullable', 'integer'],
             'student_number' => ['required_without:student_id', 'nullable', 'string', 'max:30'],
             'answers' => ['present', 'array'],
-            'answers.*' => ['nullable', 'string', 'max:50'],
+            'answers.*' => ['nullable', 'string', 'max:255'],
         ]);
 
         $student = isset($data['student_id'])
             ? Student::find($data['student_id'])
-            : Student::where('student_number', $data['student_number'])->first();
+            : Student::withNumber($data['student_number'])->first();
         if (! $student) {
             return response()->json(['message' => 'Student not found.', 'errors' => ['student' => ['Student not found.']]], 422);
         }

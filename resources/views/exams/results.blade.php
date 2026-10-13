@@ -8,10 +8,22 @@
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
-                @if ($results->isNotEmpty())
-                    <a href="{{ route('exams.results.export', $exam) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-gray-700 hover:bg-gray-50">Export CSV</a>
+                @if ($exam->versions->count() > 1)
+                    <form method="GET" class="flex items-center gap-2 text-sm">
+                        <label for="version" class="text-gray-600">Version</label>
+                        <select id="version" name="version" onchange="this.form.submit()" class="rounded-md border-gray-300 py-1.5 text-sm">
+                            @foreach ($exam->versions->sortBy('version_number') as $v)
+                                <option value="{{ $v->version_number }}" @selected($v->id === $version->id)>v{{ $v->version_number }}{{ $v->isLocked() ? '' : ' (draft)' }}</option>
+                            @endforeach
+                        </select>
+                        <noscript><x-secondary-button type="submit">Show</x-secondary-button></noscript>
+                    </form>
                 @endif
-                @if ($canManage && $results->contains(fn ($r) => ! $r->isReleased()))
+                @if ($exam->results()->exists())
+                    <a href="{{ route('exams.results.export', $exam) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-gray-700 hover:bg-gray-50">Export CSV</a>
+                    <a href="{{ route('exams.results.export', [$exam, 'format' => 'xlsx']) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-gray-700 hover:bg-gray-50">Export Excel</a>
+                @endif
+                @if ($canManage && $hasUnreleased)
                     <form method="POST" action="{{ route('exams.release', $exam) }}" onsubmit="return confirm('Release all finalized results? Released results cannot be changed silently.')">
                         @csrf
                         <x-primary-button>Release finalized results</x-primary-button>
@@ -26,9 +38,12 @@
             <x-flash />
 
             <div class="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
-                Statistics use <strong>finalized</strong> results only (n = {{ $summary['n'] }}).
+                Statistics use <strong>finalized</strong> results of <strong>version {{ $version->version_number }}</strong> only (n = {{ $summary['n'] }}).
                 @if ($unfinalized > 0)
-                    {{ $unfinalized }} submission(s) are not finalized yet and are excluded.
+                    {{ $unfinalized }} submission(s) in this exam are not finalized yet and are excluded.
+                @endif
+                @if ($exam->versions->count() > 1)
+                    <span class="block">Versions are analysed separately because their questions or points may differ. Exports include every version.</span>
                 @endif
                 @if ($summary['n'] > 0 && $summary['small_sample'])
                     <span class="block text-amber-700">Small sample (n &lt; {{ \App\Services\ExamAnalyticsService::SMALL_SAMPLE_N }}): treat these figures as indicative, not as definitive measures of exam quality.</span>

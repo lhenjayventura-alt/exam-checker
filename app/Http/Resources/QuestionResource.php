@@ -17,6 +17,20 @@ class QuestionResource extends JsonResource
             'points' => (float) $this->points,
             'multiple_select' => $this->isMultipleSelect(),
             'partial_credit' => $this->type === 'multiple_choice' ? $this->setting('partial_credit', 'none') : null,
+            'case_sensitive' => $this->type === 'identification' ? (bool) $this->setting('case_sensitive', false) : null,
+            'fuzzy' => $this->type === 'identification' ? (bool) $this->setting('fuzzy', false) : null,
+            'units' => $this->type === 'problem_solving' ? $this->setting('units', []) : null,
+            'unit_required' => $this->type === 'problem_solving' ? (bool) $this->setting('unit_required', false) : null,
+            'answer_points' => $this->type === 'problem_solving' ? $this->answerPoints() : null,
+            'rubric' => $this->whenLoaded('rubricCriteria', fn () => $this->rubricCriteria->map(fn ($c) => [
+                'id' => $c->id,
+                'label' => $c->label,
+                'description' => $c->description,
+                'max_points' => $c->max_points,
+            ])),
+            'tolerance' => $this->type === 'problem_solving'
+                ? ['value' => (float) $this->setting('tolerance', 0), 'type' => $this->setting('tolerance_type', 'absolute')]
+                : null,
             'options' => $this->whenLoaded('options', fn () => $this->options->map(fn ($o) => [
                 'label' => $o->label,
                 'text' => $o->text,
