@@ -1,3 +1,16 @@
+@php
+    $navUser = Auth::user();
+    $navLinks = [['dashboard', 'Dashboard', 'dashboard']];
+    $navLinks[] = ['offerings.index', 'Classes', 'offerings.*'];
+    if ($navUser->isTeacher()) {
+        $navLinks[] = ['review-queue', 'Review Queue', 'review-queue'];
+    }
+    if ($navUser->isAdmin()) {
+        $navLinks[] = ['admin.academics.index', 'Academics', 'admin.academics.*'];
+        $navLinks[] = ['admin.users.index', 'Users', 'admin.users.*'];
+        $navLinks[] = ['admin.audit-logs', 'Audit Log', 'admin.audit-logs'];
+    }
+@endphp
 <nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
     <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -7,14 +20,17 @@
                 <div class="shrink-0 flex items-center">
                     <a href="{{ route('dashboard') }}">
                         <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
+                        <span class="sr-only">Exam Checker</span>
                     </a>
                 </div>
 
                 <!-- Navigation Links -->
                 <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        {{ __('Dashboard') }}
-                    </x-nav-link>
+                    @foreach ($navLinks as [$route, $label, $pattern])
+                        <x-nav-link :href="route($route)" :active="request()->routeIs($pattern)">
+                            {{ $label }}
+                        </x-nav-link>
+                    @endforeach
                 </div>
             </div>
 
@@ -67,9 +83,11 @@
     <!-- Responsive Navigation Menu -->
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
         <div class="pt-2 pb-3 space-y-1">
-            <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                {{ __('Dashboard') }}
-            </x-responsive-nav-link>
+            @foreach ($navLinks as [$route, $label, $pattern])
+                <x-responsive-nav-link :href="route($route)" :active="request()->routeIs($pattern)">
+                    {{ $label }}
+                </x-responsive-nav-link>
+            @endforeach
         </div>
 
         <!-- Responsive Settings Options -->
