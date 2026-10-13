@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreExamRequest;
 use App\Models\CourseOffering;
 use App\Models\Exam;
+use App\Services\CodeExecution\CodeRunner;
 use App\Services\ExamService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class ExamController extends Controller
@@ -36,7 +38,7 @@ class ExamController extends Controller
 
         $exam->load(['offering.course', 'offering.term', 'currentVersion']);
         $canManage = $request->user()->can('manage', $exam);
-        $questions = $exam->currentVersion->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
+        $questions = $exam->currentVersion->questions()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->get();
 
         $submissions = $exam->submissions()
             ->with(['student', 'result', 'version'])
@@ -53,6 +55,10 @@ class ExamController extends Controller
             // Program chairs and administrators see structure but not the answer key.
             'showKey' => $canManage,
             'rosterCount' => $exam->offering->students()->count(),
+            // Only checked when the exam has coding questions (it starts a docker process).
+            'runnerReady' => $questions->contains('type', 'coding') && $canManage
+                ? Cache::remember('code_runner.available', 60, fn () => app(CodeRunner::class)->available())
+                : null,
         ]);
     }
 

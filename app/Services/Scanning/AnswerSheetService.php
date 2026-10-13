@@ -5,6 +5,7 @@ namespace App\Services\Scanning;
 use App\Models\AnswerSheetLayout;
 use App\Models\Exam;
 use App\Models\ExamVersion;
+use App\Models\Question;
 use App\Models\Student;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -30,15 +31,24 @@ class AnswerSheetService
         }
 
         $exam = $version->exam->loadMissing('offering.course');
-        $questions = $version->questions()->with('options')->get()->map(fn ($q) => array_filter([
+        $all = $version->questions()->with('options')->get();
+        // Coding answers are source code, submitted digitally rather than on paper.
+        $paper = $all->whereIn('type', Question::PAPER_TYPES);
+        $coding = $all->where('type', 'coding')->pluck('number');
+        $questions = $paper->map(fn ($q) => array_filter([
             'number' => $q->number,
             'type' => $q->type,
             'labels' => $q->type === 'multiple_choice' ? $q->options->pluck('label')->all() : null,
         ], fn ($v) => $v !== null))->values()->all();
 
+        $subtitle = $exam->offering->course->code.' · Section '.$exam->offering->section.' · Version '.$version->version_number;
+        if ($coding->isNotEmpty()) {
+            $subtitle .= ' · Coding question(s) '.$coding->implode(', ').' are submitted separately';
+        }
+
         $layout = $this->recognizer->layout([
             'title' => $exam->title,
-            'subtitle' => $exam->offering->course->code.' · Section '.$exam->offering->section.' · Version '.$version->version_number,
+            'subtitle' => $subtitle,
             'questions' => $questions,
         ]);
 

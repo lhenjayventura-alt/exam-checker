@@ -5,14 +5,16 @@ namespace App\Services\Grading;
 /**
  * Result of grading one answer to one question. Immutable.
  *
- * $details holds automatically scored criterion rows (currently the final answer of a
- * problem-solving question). $rubricPending marks outcomes whose remaining points come
- * from a rubric only a teacher can score, as opposed to answers the grader could not read.
+ * $details holds automatically scored criterion rows (the final answer of a problem-solving
+ * question, the automated tests of a coding question). $rubricPending marks outcomes whose
+ * remaining points come from a rubric only a teacher can score, as opposed to answers the
+ * grader could not read. $executions holds compile/test records for coding questions.
  */
 final class GradeOutcome
 {
     /**
      * @param  list<array{label: string, max_points: float, score: ?float}>  $details
+     * @param  list<array<string, mixed>>  $executions
      */
     public function __construct(
         public readonly ?float $score,
@@ -22,6 +24,7 @@ final class GradeOutcome
         public readonly ?string $reviewReason = null,
         public readonly array $details = [],
         public readonly bool $rubricPending = false,
+        public readonly array $executions = [],
     ) {}
 
     public static function review(string $reason, ?float $proposedScore = 0.0, string $explanation = ''): self
@@ -31,6 +34,7 @@ final class GradeOutcome
 
     public function withReview(string $reason, ?bool $rubricPending = null): self
     {
-        return new self($this->score, $this->isCorrect, $this->explanation, true, $reason, $this->details, $rubricPending ?? $this->rubricPending);
+        return new self($this->score, $this->isCorrect, $this->explanation, true, $reason, $this->details,
+            $rubricPending ?? $this->rubricPending, $this->executions);
     }
 }

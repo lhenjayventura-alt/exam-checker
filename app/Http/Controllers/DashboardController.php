@@ -8,6 +8,7 @@ use App\Models\ReviewTask;
 use App\Models\ScanUpload;
 use App\Models\Submission;
 use App\Models\User;
+use App\Services\CodeExecution\CodeRunner;
 use App\Services\Scanning\SheetRecognizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -75,6 +76,7 @@ class DashboardController extends Controller
             'failed' => Submission::where('status', 'failed')->with(['exam', 'student'])->latest()->take(10)->get(),
             'open_reviews' => ReviewTask::where('status', 'open')->count(),
             'scanner_ready' => Cache::remember('scanner.available', 60, fn () => app(SheetRecognizer::class)->available()),
+            'runner_ready' => Cache::remember('code_runner.available', 60, fn () => app(CodeRunner::class)->available()),
             'failed_scans' => ScanUpload::where('status', 'failed')->with('exam')->latest()->take(10)->get(),
         ];
     }

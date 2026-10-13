@@ -50,6 +50,11 @@ class GradingResult extends Model
         return $this->hasMany(GradingDetail::class)->orderByRaw('rubric_criterion_id is not null')->orderBy('rubric_criterion_id');
     }
 
+    public function executions(): HasMany
+    {
+        return $this->hasMany(CodeExecutionResult::class)->orderByRaw("case when step = 'compile' then 0 else 1 end")->orderBy('id');
+    }
+
     public function events(): HasMany
     {
         return $this->hasMany(GradingEvent::class)->orderBy('id');

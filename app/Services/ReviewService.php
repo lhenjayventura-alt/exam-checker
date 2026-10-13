@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\GradeSubmission;
 use App\Models\AuditLog;
 use App\Models\GradingDetail;
 use App\Models\GradingEvent;
@@ -29,7 +30,7 @@ class ReviewService
     public function apply(GradingResult $result, array $data, User $teacher): GradingResult
     {
         return match ($data['action']) {
-            'correct_answer' => $this->correctAnswer($result, $data['answer'] ?? null, $teacher, $data['reason'] ?? null),
+            'correct_answer' => $this->correctAnswer($result, $data['code'] ?? $data['answer'] ?? null, $teacher, $data['reason'] ?? null),
             'override' => $this->overrideScore($result, (float) $data['score'], (string) $data['reason'], $teacher, $data['feedback'] ?? null),
             'confirm' => $this->confirm($result, $teacher, $data['reason'] ?? null),
             'score_rubric' => $this->scoreRubric(
@@ -51,18 +52,37 @@ class ReviewService
     public function correctAnswer(GradingResult $result, ?string $value, User $teacher, ?string $reason = null): GradingResult
     {
         return $this->mutate($result, $teacher, function (GradingResult $result) use ($value, $teacher, $reason) {
-            $question = $result->question()->with(['options', 'answerKey', 'rubricCriteria'])->first();
+            $question = $result->question()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->first();
             $answer = RecognizedAnswer::firstOrNew(
                 ['submission_id' => $result->submission_id, 'question_id' => $question->id],
                 ['source' => 'manual'],
             );
-            $previousAnswer = $answer->effectiveValue();
+            $isCode = $question->type === 'coding';
+            if ($isCode && $value !== null) {
+                $value = str_replace("\r\n", "\n", $value);
+            }
+            // History stores short values: code is recorded by fingerprint.
+            $previousAnswer = $isCode ? $this->graders->normalize($question, $answer->code()) : $answer->effectiveValue();
 
+            // Code is kept verbatim (it is executed); other answers are normalized for comparison.
             $answer->fill([
-                'corrected_value' => $this->graders->normalize($question, $value),
+                'corrected_value' => $isCode ? $value : $this->graders->normalize($question, $value),
                 'corrected_by' => $teacher->id,
                 'corrected_at' => now(),
             ])->save();
+
+            if ($isCode) {
+                // Never run code inside a web request: mark the result pending and let the queue
+                // worker re-run the tests (GradeSubmission is dispatched after commit).
+                $result->update(['status' => 'needs_review', 'awarded_score' => null, 'proposed_score' => null,
+                    'explanation' => 'Tests are being re-run on the provided code.']);
+                $result->details()->whereNull('rubric_criterion_id')->delete();
+                $this->ensureOpenTask($result, 'Running the tests on the provided code. Refresh in a moment.');
+                $this->recordEvent($result, $teacher, 'answer_corrected', null, $previousAnswer, $this->graders->normalize($question, $value), $reason);
+                GradeSubmission::dispatch($result->submission_id);
+
+                return $result;
+            }
 
             [, $outcome] = $this->orchestrator->evaluate($question, $answer);
             if ($outcome->needsReview && ! $outcome->rubricPending) {
@@ -155,7 +175,7 @@ class ReviewService
             if ($answerMax > 0) {
                 GradingDetail::updateOrCreate(
                     ['grading_result_id' => $result->id, 'rubric_criterion_id' => null],
-                    ['label' => 'Final answer', 'max_points' => $answerMax, 'auto_score' => $answerDetail?->auto_score, 'score' => round($finalAnswer, 2)],
+                    ['label' => $answerDetail?->label ?? ($question->type === 'coding' ? 'Automated tests' : 'Final answer'), 'max_points' => $answerMax, 'auto_score' => $answerDetail?->auto_score, 'score' => round($finalAnswer, 2)],
                 );
             }
             foreach ($rubric as $id => $criterion) {

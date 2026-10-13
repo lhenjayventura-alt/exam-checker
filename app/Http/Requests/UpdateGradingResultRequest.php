@@ -24,6 +24,8 @@ class UpdateGradingResultRequest extends FormRequest
         return [
             'action' => ['required', Rule::in(['correct_answer', 'override', 'confirm', 'score_rubric'])],
             'answer' => ['nullable', 'string', 'max:255'],
+            // Source code supplied by the teacher for a coding answer (e.g. from a paper sheet).
+            'code' => ['nullable', 'string', 'max:65536'],
             'score' => ['required_if:action,override', 'nullable', 'numeric', 'min:0'],
             'reason' => ['required_if:action,override', 'nullable', 'string', 'max:1000'],
             'feedback' => ['nullable', 'string', 'max:2000'],

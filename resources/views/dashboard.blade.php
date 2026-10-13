@@ -95,8 +95,9 @@
             @if ($admin)
                 <div class="space-y-4">
                     <h3 class="text-lg font-semibold text-gray-800">System</h3>
-                    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+                    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-7">
                         <x-stat label="Answer-sheet scanner" :value="$admin['scanner_ready'] ? 'Ready' : 'Not installed'" :hint="$admin['scanner_ready'] ? 'Python + OpenCV worker responding' : 'See README: Scanner setup'" />
+                        <x-stat label="Code sandbox" :value="$admin['runner_ready'] ? 'Ready' : 'Not available'" :hint="$admin['runner_ready'] ? 'Docker and runner image found' : 'See README: Code runner setup'" />
                         <x-stat label="Users" :value="$admin['users']" />
                         <x-stat label="Course sections" :value="$admin['offerings']" />
                         <x-stat label="Exams" :value="$admin['exams']" />

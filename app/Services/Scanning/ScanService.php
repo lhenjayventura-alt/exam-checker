@@ -246,7 +246,9 @@ class ScanService
         $questions = $version->questions()->get()->keyBy('number');
         $rows = [];
         foreach ($questions as $number => $question) {
-            $rows[$number] = $this->rowFor($sheet->recognition[(string) $number] ?? null);
+            $rows[$number] = $question->type === 'coding'
+                ? ['raw' => null, 'confidence' => null, 'meta' => ['not_on_sheet' => true]]
+                : $this->rowFor($sheet->recognition[(string) $number] ?? null);
         }
 
         try {

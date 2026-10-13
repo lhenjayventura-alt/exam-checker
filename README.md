@@ -2,7 +2,7 @@
 
 AI-assisted examination checking, grading and analytics. Laravel 12 backend and web dashboard, with a versioned REST API for the (planned) Android scanning app.
 
-> **Status: Phase 3.** Multiple-choice, true/false, identification and problem-solving (numeric + rubric) exams are graded, reviewed, finalized, released and analyzed per exam version. Answers come from typed entry or from **printed answer sheets scanned or photographed** and read locally by an OpenCV worker. Rosters import from CSV; results export to CSV and Excel. Coding questions and the Android app come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 4.** Multiple-choice, true/false, identification, problem-solving (numeric + rubric) and **coding (C, Python)** questions are graded, reviewed, finalized, released and analyzed per exam version. Answers come from typed entry, source-file upload, or **printed answer sheets scanned or photographed** and read locally by an OpenCV worker. Student code runs only in throwaway, network-less Docker containers. The Android app comes next (see [Roadmap](#roadmap)).
 
 ## Stack
 
@@ -14,6 +14,7 @@ AI-assisted examination checking, grading and analytics. Laravel 12 backend and 
 | API auth | Laravel Sanctum personal access tokens |
 | Background work | Laravel queue (`database` locally, Redis recommended in production) |
 | Answer-sheet scanner | Python 3.10+ worker in `scanner/` (OpenCV, NumPy, PyMuPDF, qrcode), run as a separate process from queue jobs |
+| Code sandbox | Docker; image built from `runner/Dockerfile` (Debian slim, gcc, Python 3); containers started by queue jobs |
 
 ## Setup
 
@@ -48,6 +49,21 @@ scanner/.venv/Scripts/python -m unittest discover -s scanner/tests        # reco
 ```
 
 If the virtualenv lives elsewhere, set `SCANNER_PYTHON` to its interpreter. The admin dashboard and the scans page show whether the scanner is ready. Scans are processed by the queue worker, which must be running.
+
+### Code runner setup
+
+Coding questions need Docker on the machine that runs the **queue worker** (or a remote Docker host via `DOCKER_HOST`, which keeps student code off the app server entirely).
+
+1. Install Docker (on Windows: Docker Desktop with the WSL 2 backend) and start it.
+2. Build the sandbox image:
+
+   ```bash
+   docker build -t exam-checker-runner:1 runner/
+   ```
+
+3. Check the admin dashboard ("Code sandbox: Ready"), and run `php artisan test --group=sandbox` to execute the hostile-program tests against the real sandbox.
+
+`CODE_RUNNER_DOCKER` and `CODE_RUNNER_IMAGE` override the docker binary and image name.
 
 ### Demo data (local only)
 
@@ -106,6 +122,20 @@ Draft exam ──publish (locks version)──▶ Published ──▶ Submission
 
 Files are stored on the private disk (`storage/app/private/scans/...`) and streamed only through authorized routes with `Cache-Control: no-store`.
 
+## Coding questions
+
+**Setup per question:** language (C11 with gcc, or Python 3), time limit per test (default 2 s), memory limit (default 128 MB), output comparison (ignore trailing whitespace, ignore all whitespace, or exact), test cases (stdin input, expected stdout, points, *hidden* flag), and optional code-quality rubric criteria. Test points plus rubric points must equal the question's points.
+
+**Grading:** the program is compiled once, then run once per test. Each test whose output matches earns its points. A compile error, crash, timeout, memory or output overrun scores 0 on that test and is recorded (compiler output, exit code, time, stdout/stderr excerpts) for the teacher. With a rubric, the test score is pre-filled and the teacher scores the criteria (*Automated tests* + criteria = awarded score).
+
+**Isolation (`DockerCodeRunner`):** every compile and every test runs in a new container with `--network none`, memory = swap limit (no swap), 1 CPU, 64 PIDs, read-only root filesystem, a 16 MB `noexec` `/tmp`, user 65534 (nobody), all capabilities dropped, `no-new-privileges`, file-size and open-file limits, no log retention, and a `timeout` wrapper. The source directory is mounted read-only for test runs. Output is read as it arrives and the container is killed past 64 KB. Only test *inputs* enter the sandbox; expected outputs, including hidden tests, stay in the app and are compared in PHP, so a program cannot fake a pass by printing structured data.
+
+**Infrastructure vs. academic errors:** a compile error is the student's result. If Docker is down, the image is missing or the daemon errors, the grading job throws `CodeRunnerUnavailable`, retries, and finally marks the submission *failed* with the reason. It is never scored 0. *Grade again* re-runs it once the sandbox is back.
+
+**Submitting code:** paste it in the answer form or upload a `.c`/`.py` file (UTF-8 text, 64 KB). Code is stored verbatim; whitespace is preserved end to end. Paper answer sheets leave coding questions out (the sheet says so); for scanned submissions the teacher adds the student's code under *Provide or replace the code*. Code is never executed in a web request; the tests re-run on the queue.
+
+**Not yet supported:** Verilog/HDL (simulator + testbench), multi-file projects, interactive programs, and floating-point tolerance in output comparison.
+
 ## Rosters
 
 Add students one at a time or import a CSV (`student_number, last_name, first_name[, middle_name]`, up to 1,000 rows / 1 MB; template on the class page). Every row is validated first and **nothing is imported if any row has an error**; errors are reported by row. Existing student numbers reuse the existing record. If the file's name differs from the record on file, the record is kept and a warning is shown.
@@ -130,11 +160,11 @@ Bearer token from `POST /auth/login` (`email`, `password`, `device_name`). Token
 | GET | `/offerings` · `/offerings/{id}/students?q=` | Visible classes; roster search for student selection |
 | GET/POST | `/exams` · `/offerings/{id}/exams` · `/exams/{id}` | Answer keys included only for graders |
 | POST | `/exams/{id}/questions` · `/exams/{id}/publish` · `/exams/{id}/versions` | Question fields per type are documented in `StoreQuestionRequest`; `versions` clones the locked version into a draft |
-| POST | `/exams/{id}/submissions` | `{student_id \| student_number, answers: {"1": "B"}}` → 202; 409 on duplicate |
+| POST | `/exams/{id}/submissions` | `{student_id \| student_number, answers: {"1": "B", "5": "<source code>"}}` (or multipart `answer_files[5]`) → 202; 409 on duplicate |
 | GET | `/submissions/{id}` · `/submissions/{id}/status` | Status is a light polling endpoint |
 | POST | `/submissions/{id}/process` · `/submissions/{id}/finalize` | |
 | GET | `/review-tasks` · `/grading-results/{id}` | |
-| PATCH | `/grading-results/{id}` | `action`: `correct_answer` (`answer`), `override` (`score`, `reason`, `feedback`), `confirm`, `score_rubric` (`criteria: {id: {score, comment}}`, optional `answer_score` + `reason`) |
+| PATCH | `/grading-results/{id}` | `action`: `correct_answer` (`answer`, or `code` for coding questions), `override` (`score`, `reason`, `feedback`), `confirm`, `score_rubric` (`criteria: {id: {score, comment}}`, optional `answer_score` + `reason`); responses include compile/test `executions` |
 | POST | `/exams/{id}/release` | Releases all finalized results of the exam |
 | POST | `/exams/{id}/scans` | Multipart `scan` (PDF/JPEG/PNG) → 202; poll `GET /scan-uploads/{id}` for sheet statuses |
 | POST | `/scan-sheets/{id}/assign` | `{student_id}` for sheets that could not be matched |
@@ -147,7 +177,7 @@ Bearer token from `POST /auth/login` (`email`, `password`, `device_name`). Token
 php artisan test
 ```
 
-129 PHP tests cover grader rules (including identification normalization, fuzzy review, numeric parsing, tolerance and units), the web and API workflows, rubric scoring, versioning, roster import, exports, scanning (matching, assignment, duplicates, forged QR codes, multi-page grouping, version mismatch, upload validation), authorization (cross-teacher, chair, admin, deactivated users), grading idempotency, recognition-confidence review routing, job failure handling, and hand-computed item-analysis values. `ScannerIntegrationTest` prints sheets through the app, fills them in (including a skewed, noisy phone photo), uploads them and checks the graded result with the **real** Python worker; it is skipped when the scanner is not installed.
+157 PHP tests cover grader rules (including identification normalization, fuzzy review, numeric parsing, tolerance and units), the web and API workflows, rubric scoring, versioning, roster import, exports, scanning (matching, assignment, duplicates, forged QR codes, multi-page grouping, version mismatch, upload validation), authorization (cross-teacher, chair, admin, deactivated users), grading idempotency, recognition-confidence review routing, job failure handling, and hand-computed item-analysis values. `ScannerIntegrationTest` prints sheets through the app, fills them in (including a skewed, noisy phone photo), uploads them and checks the graded result with the **real** Python worker; it is skipped when the scanner is not installed. `DockerCodeRunnerTest` checks every container invocation for each isolation flag and the exit-code mapping without Docker; `DockerSandboxIntegrationTest` (group `sandbox`) runs real and deliberately hostile programs (network access, filesystem writes, fork bomb, memory hog, output flood, infinite loop) and is skipped until Docker is available.
 
 The scanner's own tests (`scanner/tests`) render sheets, mark them, distort them and read them back.
 
@@ -157,6 +187,6 @@ The suite passes on SQLite (in-memory) and MySQL 8. To run against MySQL, point 
 
 1. ~~**Phase 2:** identification, problem solving with rubrics, exam versioning, CSV roster import, Excel export.~~ Done. Known limits: no unit conversion, no symbolic math checking, rubric is per question (not reusable across questions).
 2. ~~**Phase 3:** printable answer sheets, scan upload, local OpenCV recognition behind a replaceable `SheetRecognizer` interface, answer crops, review with images.~~ Done. Known limits: recognition thresholds were tuned on synthetic marks and **should be calibrated with real pencil/pen scans from your printers**; handwriting is transcribed by teachers (an OCR/handwriting engine can be added as another `SheetRecognizer`); no student-number bubble grid (use named sheets or assign manually).
-3. **Phase 4:** isolated code-execution worker (container, no network, CPU/memory/time limits) for C and Python, then Verilog via simulator + testbench.
+3. ~~**Phase 4:** coding questions (C, Python) in an isolated Docker sandbox.~~ Done; Verilog via simulator + testbench is still open.
 4. **Phase 5:** Android app (Kotlin, CameraX, Retrofit, encrypted token storage, upload queue with retry).
 5. Post-release amendment workflow, notifications, chair-level authorized override permission, job monitoring screen.

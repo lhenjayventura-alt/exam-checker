@@ -33,6 +33,14 @@ class RecognizedAnswer extends Model
         return $this->isCorrected() ? $this->corrected_value : $this->normalized_value;
     }
 
+    /** Source code of a coding answer: the teacher-provided code when present, otherwise as submitted. */
+    public function code(): ?string
+    {
+        $code = $this->isCorrected() ? $this->corrected_value : $this->raw_value;
+
+        return $code === null || trim($code) === '' ? null : $code;
+    }
+
     /** A handwritten answer the scanner cropped but cannot read; the teacher transcribes it. */
     public function needsTranscription(): bool
     {

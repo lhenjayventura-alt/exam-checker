@@ -30,6 +30,16 @@ class GradingResultResource extends JsonResource
                 'score' => $d->score,
                 'comment' => $d->comment,
             ])),
+            'executions' => $this->whenLoaded('executions', fn () => $this->executions->map(fn ($e) => [
+                'step' => $e->step,
+                'test_case_id' => $e->coding_test_case_id,
+                'status' => $e->status,
+                'points' => $e->points,
+                'exit_code' => $e->exit_code,
+                'duration_ms' => $e->duration_ms,
+                'stdout' => $e->stdout,
+                'stderr' => $e->stderr,
+            ])),
             'review_reason' => $this->whenLoaded('openReviewTask', fn () => $this->openReviewTask?->reason),
             'history' => $this->whenLoaded('events', fn () => $this->events->map(fn ($e) => [
                 'event' => $e->event,

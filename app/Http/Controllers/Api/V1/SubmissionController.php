@@ -29,8 +29,8 @@ class SubmissionController extends Controller
         $data = $request->validate([
             'student_id' => ['required_without:student_number', 'nullable', 'integer'],
             'student_number' => ['required_without:student_id', 'nullable', 'string', 'max:30'],
+            ...SubmissionService::answerRules(),
             'answers' => ['present', 'array'],
-            'answers.*' => ['nullable', 'string', 'max:255'],
         ]);
 
         $student = isset($data['student_id'])
@@ -48,7 +48,8 @@ class SubmissionController extends Controller
             ], 409);
         }
 
-        $submission = $this->submissions->createDigital($exam, $student, $data['answers'], $request->user());
+        $answers = $this->submissions->withSourceFiles($exam, $data['answers'], $request->file('answer_files', []));
+        $submission = $this->submissions->createDigital($exam, $student, $answers, $request->user());
 
         return (new SubmissionResource($submission->load('student')))->response()->setStatusCode(202);
     }

@@ -50,7 +50,7 @@ class ExamController extends Controller
         $exam->load(['offering.course', 'offering.term', 'currentVersion.questions.options', 'currentVersion.questions.rubricCriteria']);
         // The answer key is included only for users with grading rights on this exam.
         if ($request->user()->can('grade', $exam)) {
-            $exam->load('currentVersion.questions.answerKey');
+            $exam->load(['currentVersion.questions.answerKey', 'currentVersion.questions.testCases']);
         }
 
         return new ExamResource($exam);

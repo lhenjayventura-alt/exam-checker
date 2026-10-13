@@ -44,6 +44,18 @@ class StoreQuestionRequest extends FormRequest
         if (is_array($this->criteria)) {
             $this->merge(['criteria' => array_values(array_filter($this->criteria, fn ($c) => is_array($c) && trim((string) ($c['label'] ?? '')) !== ''))]);
         }
+        if (is_array($this->tests)) {
+            // Drop untouched rows; normalize the hidden flag.
+            $tests = array_values(array_filter($this->tests, fn ($t) => is_array($t) && trim((string) ($t['name'] ?? '')) !== ''));
+            // Browsers submit textareas with CRLF; programs must see the LF input a terminal gives.
+            $lf = fn ($v) => is_string($v) ? str_replace("\r\n", "\n", $v) : $v;
+            $this->merge(['tests' => array_map(fn ($t) => [
+                ...$t,
+                'input' => $lf($t['input'] ?? null),
+                'expected_output' => $lf($t['expected_output'] ?? null),
+                'hidden' => filter_var($t['hidden'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            ], $tests)]);
+        }
         foreach (['multiple_select', 'case_sensitive', 'fuzzy', 'unit_required'] as $flag) {
             $this->merge([$flag => $this->boolean($flag)]);
         }
@@ -79,10 +91,21 @@ class StoreQuestionRequest extends FormRequest
             'units.*' => ['exclude_unless:type,problem_solving', 'string', 'max:30'],
             'unit_required' => ['boolean'],
             'answer_points' => ['exclude_unless:type,problem_solving', 'nullable', 'numeric', 'min:0', 'max:1000'],
-            'criteria' => ['exclude_unless:type,problem_solving', 'array', 'max:10'],
-            'criteria.*.label' => ['exclude_unless:type,problem_solving', 'required', 'string', 'max:150'],
-            'criteria.*.description' => ['exclude_unless:type,problem_solving', 'nullable', 'string', 'max:1000'],
-            'criteria.*.max_points' => ['exclude_unless:type,problem_solving', 'required', 'numeric', 'min:0.01', 'max:1000'],
+            'criteria' => ['exclude_unless:type,problem_solving,coding', 'array', 'max:10'],
+            'criteria.*.label' => ['exclude_unless:type,problem_solving,coding', 'required', 'string', 'max:150'],
+            'criteria.*.description' => ['exclude_unless:type,problem_solving,coding', 'nullable', 'string', 'max:1000'],
+            'criteria.*.max_points' => ['exclude_unless:type,problem_solving,coding', 'required', 'numeric', 'min:0.01', 'max:1000'],
+
+            'language' => ['exclude_unless:type,coding', 'required', Rule::in(array_keys(Question::LANGUAGES))],
+            'time_limit_ms' => ['exclude_unless:type,coding', 'nullable', 'integer', 'min:100', 'max:10000'],
+            'memory_mb' => ['exclude_unless:type,coding', 'nullable', 'integer', 'min:32', 'max:512'],
+            'comparison' => ['exclude_unless:type,coding', 'nullable', Rule::in(array_keys(Question::OUTPUT_COMPARISONS))],
+            'tests' => ['exclude_unless:type,coding', 'required', 'array', 'min:1', 'max:30'],
+            'tests.*.name' => ['exclude_unless:type,coding', 'required', 'string', 'max:100'],
+            'tests.*.input' => ['exclude_unless:type,coding', 'nullable', 'string', 'max:65536'],
+            'tests.*.expected_output' => ['exclude_unless:type,coding', 'nullable', 'string', 'max:65536'],
+            'tests.*.points' => ['exclude_unless:type,coding', 'required', 'numeric', 'min:0.01', 'max:1000'],
+            'tests.*.hidden' => ['exclude_unless:type,coding', 'boolean'],
         ];
     }
 
@@ -95,6 +118,8 @@ class StoreQuestionRequest extends FormRequest
             'expected.required' => 'Enter the expected numeric answer.',
             'criteria.*.label.required' => 'Each rubric criterion needs a label.',
             'criteria.*.max_points.required' => 'Each rubric criterion needs maximum points.',
+            'tests.required' => 'Add at least one test case.',
+            'tests.*.name.required' => 'Each test case needs a name.',
         ];
     }
 
@@ -109,9 +134,24 @@ class StoreQuestionRequest extends FormRequest
                 'true_false' => $this->checkTrueFalse($validator),
                 'multiple_choice' => $this->checkMultipleChoice($validator),
                 'problem_solving' => $this->checkProblemSolving($validator),
+                'coding' => $this->checkCoding($validator),
                 default => null,
             };
         }];
+    }
+
+    private function checkCoding(Validator $validator): void
+    {
+        $points = (float) $this->input('points');
+        $testPoints = (float) collect($this->input('tests', []))->sum(fn ($t) => (float) $t['points']);
+        $rubricPoints = (float) collect($this->input('criteria', []))->sum(fn ($c) => (float) $c['max_points']);
+
+        if (abs($testPoints + $rubricPoints - $points) > 0.001) {
+            $validator->errors()->add('tests', sprintf(
+                'Test points (%s) plus rubric points (%s) must equal the question points (%s).',
+                $testPoints + 0, $rubricPoints + 0, $points + 0,
+            ));
+        }
     }
 
     private function checkTrueFalse(Validator $validator): void

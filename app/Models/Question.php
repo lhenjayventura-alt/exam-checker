@@ -18,7 +18,18 @@ class Question extends Model
     ];
 
     /** Types that can be created in the current release (each has a grader). */
-    public const SUPPORTED_TYPES = ['multiple_choice', 'true_false', 'identification', 'problem_solving'];
+    public const SUPPORTED_TYPES = ['multiple_choice', 'true_false', 'identification', 'problem_solving', 'coding'];
+
+    /** Types answered on a paper bubble sheet or write-in box (coding answers are source code). */
+    public const PAPER_TYPES = ['multiple_choice', 'true_false', 'identification', 'problem_solving'];
+
+    public const LANGUAGES = ['c' => 'C (gcc, C11)', 'python' => 'Python 3'];
+
+    public const OUTPUT_COMPARISONS = [
+        'trim' => 'Ignore trailing spaces and blank lines',
+        'tokens' => 'Ignore all whitespace differences',
+        'exact' => 'Exact match',
+    ];
 
     protected $fillable = ['exam_version_id', 'number', 'type', 'prompt', 'points', 'config'];
 
@@ -47,10 +58,18 @@ class Question extends Model
         return $this->hasMany(RubricCriterion::class)->orderBy('position');
     }
 
-    /** Points awarded for a correct final answer; the rest comes from rubric criteria. */
+    public function testCases(): HasMany
+    {
+        return $this->hasMany(CodingTestCase::class)->orderBy('position');
+    }
+
+    /**
+     * Automatically scored points: the final answer of a problem-solving question, or the
+     * test cases of a coding question. The rest comes from rubric criteria.
+     */
     public function answerPoints(): float
     {
-        return $this->type === 'problem_solving'
+        return in_array($this->type, ['problem_solving', 'coding'], true)
             ? (float) $this->setting('answer_points', $this->points)
             : (float) $this->points;
     }
@@ -58,7 +77,7 @@ class Question extends Model
     /** True when scoring involves partial credit, so difficulty is a normalized mean score. */
     public function allowsPartialCredit(): bool
     {
-        return $this->type === 'problem_solving'
+        return in_array($this->type, ['problem_solving', 'coding'], true)
             || ($this->isMultipleSelect() && $this->setting('partial_credit') === 'proportional');
     }
 

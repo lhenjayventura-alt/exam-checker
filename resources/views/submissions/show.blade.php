@@ -77,8 +77,15 @@
                                 <span class="w-10 font-semibold">{{ $q->number }}.</span>
                                 <span class="w-40 text-xs text-gray-500">{{ \App\Models\Question::TYPES[$q->type] }}</span>
                                 <span class="min-w-[9rem]">
+                                    @if ($q->type === 'coding')
+                                        @php $code = $answer?->code(); @endphp
+                                        Code: <span class="font-semibold">{{ $code === null ? '(none)' : substr_count($code, "\n") + 1 .' line(s)' }}</span>
+                                        @if ($answer?->isCorrected())<span class="block text-xs text-gray-500">Provided by the teacher; the original submission is kept.</span>@endif
+                                    @else
                                     Answer: <span class="font-mono font-semibold">{{ $answer?->effectiveValue() ?? '(blank)' }}</span>
-                                    @if ($answer?->isCorrected())
+                                    @endif
+                                    @if ($q->type === 'coding')
+                                    @elseif ($answer?->isCorrected())
                                         <span class="block text-xs text-gray-500">Originally: <span class="font-mono">{{ $answer->normalized_value ?? '(blank)' }}</span> (raw “{{ $answer->raw_value }}”)</span>
                                     @elseif ($answer && $answer->raw_value !== null && $answer->raw_value !== $answer->normalized_value)
                                         <span class="block text-xs text-gray-500">Raw: “{{ $answer->raw_value }}”</span>
@@ -97,6 +104,7 @@
                                             'true_false' => $q->answerKey?->correct_values[0] ?? '—',
                                             'identification' => implode(' / ', $q->answerKey?->correct_values ?? []),
                                             'problem_solving' => ($q->answerKey?->correct_values[0] ?? '—').' '.($q->setting('units')[0] ?? ''),
+                                            'coding' => $q->testCases->count().' test(s)',
                                             default => implode(',', $q->answerKey?->correct_values ?? []),
                                         };
                                     @endphp
@@ -127,6 +135,47 @@
                                 @if ($task)
                                     <p class="rounded bg-amber-100 px-3 py-2 text-amber-900"><span class="font-semibold">Review needed:</span> {{ $task->reason }}</p>
                                 @endif
+                                @if ($q->type === 'coding' && $canGrade)
+                                    @if ($code = $answer?->code())
+                                        <pre class="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs leading-relaxed text-gray-100"><code>{{ $code }}</code></pre>
+                                    @endif
+                                    @if ($result && $result->executions->isNotEmpty())
+                                        @php $compile = $result->executions->firstWhere('step', 'compile'); @endphp
+                                        @if ($compile && $compile->status === 'compile_error')
+                                            <div>
+                                                <p class="text-xs font-medium text-red-700">Compilation failed ({{ $compile->duration_ms }} ms)</p>
+                                                <pre class="max-h-48 overflow-auto rounded bg-red-50 p-2 text-xs text-red-900">{{ $compile->stderr }}</pre>
+                                            </div>
+                                        @endif
+                                        <table class="w-full text-xs">
+                                            <thead class="text-left text-gray-500"><tr><th class="py-1 pe-3">Test</th><th class="pe-3">Result</th><th class="pe-3 text-right">Points</th><th class="pe-3 text-right">Time</th><th>Details</th></tr></thead>
+                                            <tbody class="divide-y divide-gray-100 align-top">
+                                                @foreach ($result->executions->where('step', 'test') as $run)
+                                                    @php $tc = $run->testCase; @endphp
+                                                    <tr>
+                                                        <td class="py-1 pe-3">{{ $tc?->name ?? 'deleted test' }} @if ($tc?->is_hidden)<span class="rounded bg-gray-200 px-1">hidden</span>@endif</td>
+                                                        <td class="pe-3"><span class="{{ $run->status === 'passed' ? 'text-green-700' : 'font-semibold text-red-700' }}">{{ str($run->status)->replace('_', ' ') }}</span></td>
+                                                        <td class="pe-3 text-right">{{ $run->points ?? 0 }} / {{ $tc?->points }}</td>
+                                                        <td class="pe-3 text-right">{{ $run->duration_ms !== null ? $run->duration_ms.' ms' : '—' }}</td>
+                                                        <td>
+                                                            @if ($run->status !== 'passed' && $run->status !== 'skipped' && $tc)
+                                                                <details>
+                                                                    <summary class="cursor-pointer text-indigo-700">expected vs. actual</summary>
+                                                                    <div class="mt-1 grid gap-2 sm:grid-cols-2">
+                                                                        <pre class="max-h-40 overflow-auto rounded bg-green-50 p-2">{{ \Illuminate\Support\Str::limit($tc->expected_output, 2000) }}</pre>
+                                                                        <pre class="max-h-40 overflow-auto rounded bg-red-50 p-2">{{ \Illuminate\Support\Str::limit((string) $run->stdout, 2000) }}</pre>
+                                                                    </div>
+                                                                    @if ($run->stderr)<pre class="mt-1 max-h-32 overflow-auto rounded bg-gray-100 p-2 text-gray-700">{{ \Illuminate\Support\Str::limit($run->stderr, 2000) }}</pre>@endif
+                                                                    @if ($run->exit_code !== null)<p class="text-gray-500">Exit code {{ $run->exit_code }}</p>@endif
+                                                                </details>
+                                                            @endif
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    @endif
+                                @endif
                                 @if ($result && $canGrade)
                                     <p class="text-gray-700"><span class="font-medium">Grading explanation:</span> {{ $result->explanation }} <span class="text-xs text-gray-400">({{ $result->grader }})</span></p>
                                     @if ($result->feedback)<p class="text-gray-700"><span class="font-medium">Feedback:</span> {{ $result->feedback }}</p>@endif
@@ -154,9 +203,15 @@
                                         <form method="POST" action="{{ route('grading-results.update', $result) }}" class="space-y-2 rounded-md bg-gray-50 p-3">
                                             @csrf @method('PATCH')
                                             <input type="hidden" name="action" value="correct_answer">
+                                            @if ($q->type === 'coding')
+                                                <p class="font-medium text-gray-800">Provide or replace the code</p>
+                                                <p class="text-xs text-gray-500">The tests are re-run in the background. The original submission is kept.</p>
+                                                <textarea name="code" rows="6" spellcheck="false" maxlength="65536" class="block w-full rounded-md border-gray-300 font-mono text-xs" aria-label="Source code">{{ $answer?->code() }}</textarea>
+                                            @else
                                             <p class="font-medium text-gray-800">Correct the answer</p>
                                             <p class="text-xs text-gray-500">Re-grades automatically. The original answer is kept.</p>
                                             <input name="answer" maxlength="255" value="{{ $answer?->effectiveValue() }}" class="block w-full rounded-md border-gray-300 font-mono text-sm {{ in_array($q->type, ['multiple_choice', 'true_false']) ? 'uppercase' : '' }}" placeholder="Blank" aria-label="Corrected answer">
+                                            @endif
                                             <input name="reason" maxlength="1000" class="block w-full rounded-md border-gray-300 text-sm" placeholder="Note (optional)">
                                             <x-secondary-button type="submit">Save correction</x-secondary-button>
                                         </form>
@@ -184,7 +239,7 @@
                                                 <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                                     @if ($q->answerPoints() > 0)
                                                         <label class="block text-xs">
-                                                            <span class="font-medium">Final answer</span> (0–{{ $q->answerPoints() }}, auto: {{ $answerDetail?->auto_score ?? 'not readable' }})
+                                                            <span class="font-medium">{{ $answerDetail?->label ?? ($q->type === 'coding' ? 'Automated tests' : 'Final answer') }}</span> (0–{{ $q->answerPoints() }}, auto: {{ $answerDetail?->auto_score ?? 'not available' }})
                                                             <input name="answer_score" type="number" step="0.01" min="0" max="{{ $q->answerPoints() }}" value="{{ $answerDetail?->score }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
                                                         </label>
                                                     @endif

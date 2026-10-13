@@ -15,6 +15,9 @@ class GradeSubmission implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
+    // Coding questions run compile and test containers; allow time for them.
+    public int $timeout = 900;
+
     public array $backoff = [10, 60];
 
     public function __construct(public readonly int $submissionId)

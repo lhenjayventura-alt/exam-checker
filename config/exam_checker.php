@@ -28,4 +28,17 @@ return [
         'max_upload_kb' => (int) env('SCANNER_MAX_UPLOAD_KB', 20480),
         'disk' => 'local', // private disk: storage/app/private
     ],
+
+    /*
+    | Coding questions: student code runs only in throwaway Docker containers (see
+    | DockerCodeRunner for the isolation flags). Build the image with:
+    |   docker build -t exam-checker-runner:1 runner/
+    | Set DOCKER_HOST in the queue worker's environment to execute on a separate machine.
+    */
+    'code_runner' => [
+        'docker' => env('CODE_RUNNER_DOCKER', 'docker'),
+        'image' => env('CODE_RUNNER_IMAGE', 'exam-checker-runner:1'),
+        'work_root' => storage_path('app/private/code-runs'),
+        'max_source_kb' => 64,
+    ],
 ];

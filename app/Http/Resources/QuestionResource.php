@@ -31,6 +31,22 @@ class QuestionResource extends JsonResource
             'tolerance' => $this->type === 'problem_solving'
                 ? ['value' => (float) $this->setting('tolerance', 0), 'type' => $this->setting('tolerance_type', 'absolute')]
                 : null,
+            'coding' => $this->type === 'coding' ? [
+                'language' => $this->setting('language'),
+                'time_limit_ms' => (int) $this->setting('time_limit_ms', 2000),
+                'memory_mb' => (int) $this->setting('memory_mb', 128),
+                'comparison' => $this->setting('comparison', 'trim'),
+                'test_points' => $this->answerPoints(),
+            ] : null,
+            // Loaded only for users with grading rights (like the answer key).
+            'test_cases' => $this->whenLoaded('testCases', fn () => $this->testCases->map(fn ($t) => [
+                'id' => $t->id,
+                'name' => $t->name,
+                'input' => $t->input,
+                'expected_output' => $t->expected_output,
+                'points' => $t->points,
+                'hidden' => $t->is_hidden,
+            ])),
             'options' => $this->whenLoaded('options', fn () => $this->options->map(fn ($o) => [
                 'label' => $o->label,
                 'text' => $o->text,

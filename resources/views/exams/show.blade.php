@@ -47,6 +47,12 @@
                 <x-stat label="Submissions" :value="$submissions->count().' / '.$rosterCount" hint="Submitted / on roster" />
             </div>
 
+            @if ($runnerReady === false)
+                <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+                    This exam has coding questions, but the code sandbox is not available (Docker not running or the runner image not built). Coding answers will wait and be retried; nothing is scored as wrong because of this. See README, “Code runner setup”.
+                </div>
+            @endif
+
             @if ($exam->instructions)
                 <x-panel title="Instructions"><p class="whitespace-pre-line text-sm text-gray-700">{{ $exam->instructions }}</p></x-panel>
             @endif
@@ -91,6 +97,37 @@
                                     @endforeach
                                 </p>
                                 <p class="text-xs text-gray-500">{{ $q->setting('case_sensitive') ? 'Case-sensitive' : 'Case-insensitive' }}{{ $q->setting('fuzzy') ? ' · near misses flagged for review' : '' }}</p>
+                            @elseif ($q->type === 'coding')
+                                <p class="mt-1 text-xs text-gray-600">
+                                    {{ \App\Models\Question::LANGUAGES[$q->setting('language')] ?? $q->setting('language') }}
+                                    · {{ $q->setting('time_limit_ms') }} ms · {{ $q->setting('memory_mb') }} MB
+                                    · {{ \App\Models\Question::OUTPUT_COMPARISONS[$q->setting('comparison', 'trim')] }}
+                                    · tests {{ $q->answerPoints() }} pt
+                                </p>
+                                @if ($showKey)
+                                    <div class="mt-1 space-y-1">
+                                        @foreach ($q->testCases as $t)
+                                            <details class="rounded border border-gray-200 px-2 py-1 text-xs">
+                                                <summary class="cursor-pointer">{{ $t->name }} · {{ $t->points }} pt @if ($t->is_hidden)<span class="ms-1 rounded bg-gray-200 px-1">hidden</span>@endif</summary>
+                                                <div class="mt-1 grid gap-2 sm:grid-cols-2">
+                                                    <pre class="overflow-x-auto rounded bg-gray-50 p-2"><span class="text-gray-400">input</span>
+{{ $t->input }}</pre>
+                                                    <pre class="overflow-x-auto rounded bg-green-50 p-2"><span class="text-gray-400">expected</span>
+{{ $t->expected_output }}</pre>
+                                                </div>
+                                            </details>
+                                        @endforeach
+                                    </div>
+                                @else
+                                    <p class="text-xs text-gray-500">{{ $q->testCases->count() }} test case(s).</p>
+                                @endif
+                                @if ($q->rubricCriteria->isNotEmpty())
+                                    <ul class="mt-1 list-disc ps-5 text-xs text-gray-600">
+                                        @foreach ($q->rubricCriteria as $c)
+                                            <li><span class="font-medium">{{ $c->label }}</span> ({{ $c->max_points }} pt){{ $c->description ? ': '.$c->description : '' }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
                             @elseif ($showKey && $q->type === 'problem_solving')
                                 @php
                                     $tol = (float) $q->setting('tolerance', 0);

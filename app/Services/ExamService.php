@@ -71,6 +71,13 @@ class ExamService
                     'unit_required' => (bool) ($data['unit_required'] ?? false),
                     'answer_points' => (float) ($data['answer_points'] ?? $data['points']),
                 ],
+                'coding' => [
+                    'language' => $data['language'],
+                    'time_limit_ms' => (int) ($data['time_limit_ms'] ?? 2000),
+                    'memory_mb' => (int) ($data['memory_mb'] ?? 128),
+                    'comparison' => $data['comparison'] ?? 'trim',
+                    'answer_points' => (float) collect($data['tests'])->sum(fn ($t) => (float) $t['points']),
+                ],
                 default => null,
             };
 
@@ -97,8 +104,24 @@ class ExamService
             } elseif ($data['type'] === 'identification') {
                 // Display forms are stored; the grader normalizes when comparing.
                 $correct = array_values(array_unique(array_map('trim', $data['accepted_answers'])));
-            } else {
+            } elseif ($data['type'] === 'problem_solving') {
                 $correct = [(string) (float) $data['expected']];
+            } else {
+                // Coding: the test cases are the key.
+                $correct = null;
+                foreach (array_values($data['tests']) as $i => $test) {
+                    $question->testCases()->create([
+                        'name' => $test['name'],
+                        'input' => $test['input'] ?? '',
+                        'expected_output' => $test['expected_output'] ?? '',
+                        'points' => $test['points'],
+                        'is_hidden' => (bool) ($test['hidden'] ?? false),
+                        'position' => $i + 1,
+                    ]);
+                }
+            }
+
+            if (in_array($data['type'], ['problem_solving', 'coding'], true)) {
                 foreach (array_values($data['criteria'] ?? []) as $i => $criterion) {
                     $question->rubricCriteria()->create([
                         'label' => $criterion['label'],
@@ -109,9 +132,11 @@ class ExamService
                 }
             }
 
-            $question->answerKey()->create(['correct_values' => $correct]);
+            if ($correct !== null) {
+                $question->answerKey()->create(['correct_values' => $correct]);
+            }
 
-            return $question->load('options', 'answerKey', 'rubricCriteria');
+            return $question->load('options', 'answerKey', 'rubricCriteria', 'testCases');
         });
     }
 
@@ -131,7 +156,7 @@ class ExamService
 
         return DB::transaction(function () use ($exam, $teacher) {
             $version = $exam->currentVersion()->lockForUpdate()->firstOrFail();
-            $questions = $version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
+            $questions = $version->questions()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->get();
 
             $errors = [];
             if ($questions->isEmpty()) {
@@ -142,7 +167,14 @@ class ExamService
                     $errors[] = "Question {$q->number}: {$q->type} questions are not supported yet.";
                 }
                 $key = $q->answerKey?->correct_values ?? [];
-                if ($key === []) {
+                if ($q->type === 'coding') {
+                    if ($q->testCases->isEmpty()) {
+                        $errors[] = "Question {$q->number} needs at least one test case.";
+                    }
+                    if (abs($q->testCases->sum('points') + $q->rubricCriteria->sum('max_points') - $q->points) > 0.001) {
+                        $errors[] = "Question {$q->number}: test points plus rubric points must equal the question's points.";
+                    }
+                } elseif ($key === []) {
                     $errors[] = "Question {$q->number} has no answer key.";
                 } elseif ($q->type === 'multiple_choice' && array_diff($key, $q->options->pluck('label')->all()) !== []) {
                     $errors[] = "Question {$q->number}: the answer key refers to an option that does not exist.";
@@ -184,10 +216,13 @@ class ExamService
         return DB::transaction(function () use ($exam, $current, $teacher) {
             $version = $exam->versions()->create(['version_number' => $current->version_number + 1]);
 
-            foreach ($current->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get() as $q) {
+            foreach ($current->questions()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->get() as $q) {
                 $copy = $version->questions()->create($q->only(['number', 'type', 'prompt', 'points', 'config']));
                 foreach ($q->options as $o) {
                     $copy->options()->create($o->only(['label', 'text', 'position']));
+                }
+                foreach ($q->testCases as $t) {
+                    $copy->testCases()->create($t->only(['name', 'input', 'expected_output', 'points', 'is_hidden', 'position']));
                 }
                 foreach ($q->rubricCriteria as $c) {
                     $copy->rubricCriteria()->create($c->only(['label', 'description', 'max_points', 'position']));

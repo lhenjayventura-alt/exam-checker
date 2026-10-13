@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\CodeExecution\CodeRunner;
+use App\Services\CodeExecution\DockerCodeRunner;
+use App\Services\Grading\CodingGrader;
 use App\Services\Grading\GraderRegistry;
 use App\Services\Grading\IdentificationGrader;
 use App\Services\Grading\MultipleChoiceGrader;
@@ -23,12 +26,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(GraderRegistry::class, fn ($app) => new GraderRegistry([
+        // Not a singleton: graders resolve their dependencies (e.g. the code runner) at use time.
+        $this->app->bind(GraderRegistry::class, fn ($app) => new GraderRegistry([
             $app->make(MultipleChoiceGrader::class),
             $app->make(TrueFalseGrader::class),
             $app->make(IdentificationGrader::class),
             $app->make(NumericalProblemGrader::class),
+            $app->make(CodingGrader::class),
         ]));
+
+        $this->app->singleton(CodeRunner::class, fn () => new DockerCodeRunner(
+            config('exam_checker.code_runner.docker'),
+            config('exam_checker.code_runner.image'),
+            config('exam_checker.code_runner.work_root'),
+        ));
 
         $this->app->singleton(SheetRecognizer::class, fn () => new PythonOmrRecognizer(
             config('exam_checker.scanner.python'),

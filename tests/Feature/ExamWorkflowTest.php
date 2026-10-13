@@ -81,7 +81,9 @@ class ExamWorkflowTest extends TestCase
             ->assertSessionHasErrors('options');
         $this->post(route('exams.questions.store', $exam), ['type' => 'true_false', 'points' => 1, 'correct' => ['yes']])
             ->assertSessionHasErrors('correct');
-        $this->post(route('exams.questions.store', $exam), ['type' => 'coding', 'points' => 1, 'correct' => ['x']])
+        $this->post(route('exams.questions.store', $exam), ['type' => 'coding', 'points' => 1, 'language' => 'c'])
+            ->assertSessionHasErrors('tests');
+        $this->post(route('exams.questions.store', $exam), ['type' => 'essay', 'points' => 1])
             ->assertSessionHasErrors('type');
         $this->post(route('exams.questions.store', $exam), ['type' => 'true_false', 'points' => 0, 'correct' => ['true']])
             ->assertSessionHasErrors('points');

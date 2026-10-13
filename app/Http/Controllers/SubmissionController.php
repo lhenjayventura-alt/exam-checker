@@ -37,12 +37,12 @@ class SubmissionController extends Controller
 
         $data = $request->validate([
             'student_id' => ['required', 'integer', 'exists:students,id'],
-            'answers' => ['array'],
-            'answers.*' => ['nullable', 'string', 'max:255'],
+            ...SubmissionService::answerRules(),
         ]);
 
+        $answers = $this->submissions->withSourceFiles($exam, $data['answers'] ?? [], $request->file('answer_files', []));
         $submission = $this->submissions->createDigital(
-            $exam, Student::findOrFail($data['student_id']), $data['answers'] ?? [], $request->user(),
+            $exam, Student::findOrFail($data['student_id']), $answers, $request->user(),
         );
 
         $next = $request->boolean('add_another') ? route('exams.submissions.create', $exam) : route('submissions.show', $submission);
@@ -56,11 +56,11 @@ class SubmissionController extends Controller
 
         $submission->load(['exam.offering.course', 'student', 'result', 'version', 'files']);
         $answers = $submission->answers()->get()->keyBy('question_id');
-        $results = $submission->gradingResults()->with(['openReviewTask', 'events.user', 'details'])->get()->keyBy('question_id');
+        $results = $submission->gradingResults()->with(['openReviewTask', 'events.user', 'details', 'executions.testCase'])->get()->keyBy('question_id');
 
         return view('submissions.show', [
             'submission' => $submission,
-            'questions' => $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get(),
+            'questions' => $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->get(),
             'answers' => $answers,
             'results' => $results,
             'canGrade' => request()->user()->can('grade', $submission->exam),

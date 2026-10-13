@@ -15,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias(['active' => EnsureUserIsActive::class]);
+        // Whitespace is significant in source code and in program input/output. Other answers
+        // are trimmed by SubmissionService.
+        $middleware->trimStrings(except: ['answers.*', 'code', 'tests.*.input', 'tests.*.expected_output']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // API requests always receive JSON errors.

@@ -15,7 +15,7 @@
                 </x-panel>
             @else
                 <x-panel>
-                    <form method="POST" action="{{ route('exams.submissions.store', $exam) }}" class="space-y-6">
+                    <form method="POST" action="{{ route('exams.submissions.store', $exam) }}" enctype="multipart/form-data" class="space-y-6">
                         @csrf
                         <div class="max-w-md">
                             <x-input-label for="student_id" value="Student" />
@@ -46,6 +46,7 @@
                                             default => '',
                                         };
                                     @endphp
+                                    @continue($q->type === 'coding')
                                     <label class="block {{ $short ? '' : 'col-span-2' }}">
                                         <span class="text-xs font-medium text-gray-700">{{ $q->number }}
                                             <span class="text-gray-400">{{ $hint }}</span>
@@ -55,6 +56,23 @@
                                     </label>
                                 @endforeach
                             </div>
+
+                            @foreach ($questions->where('type', 'coding') as $q)
+                                <div class="mt-4 rounded-md border border-gray-200 p-3">
+                                    <label for="code-{{ $q->number }}" class="text-sm font-medium text-gray-700">
+                                        {{ $q->number }}. Source code
+                                        <span class="text-xs font-normal text-gray-500">({{ \App\Models\Question::LANGUAGES[$q->setting('language')] ?? $q->setting('language') }})</span>
+                                    </label>
+                                    <textarea id="code-{{ $q->number }}" name="answers[{{ $q->number }}]" rows="10" spellcheck="false" autocapitalize="off"
+                                              class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                              placeholder="Paste the student's code, or upload the file below">{{ old('answers.'.$q->number) }}</textarea>
+                                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                                        <label for="file-{{ $q->number }}">or upload a source file:</label>
+                                        <input id="file-{{ $q->number }}" type="file" name="answer_files[{{ $q->number }}]" accept=".c,.h,.py,.txt,text/plain">
+                                        <span>(UTF-8 text, up to {{ config('exam_checker.code_runner.max_source_kb') }} KB; pasted code takes priority)</span>
+                                    </div>
+                                </div>
+                            @endforeach
                         </div>
 
                         <div class="flex flex-wrap justify-end gap-3">

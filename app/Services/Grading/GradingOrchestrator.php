@@ -2,6 +2,7 @@
 
 namespace App\Services\Grading;
 
+use App\Models\CodeExecutionResult;
 use App\Models\GradingDetail;
 use App\Models\GradingEvent;
 use App\Models\GradingResult;
@@ -27,14 +28,25 @@ class GradingOrchestrator
 
     public function grade(Submission $submission): Submission
     {
-        return DB::transaction(function () use ($submission) {
+        $questions = $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria', 'testCases'])->get();
+        $answers = $submission->answers()->get()->keyBy('question_id');
+
+        // Slow graders (code execution) run before the transaction so no row lock is held
+        // while containers run. Results a teacher has decided are never re-run.
+        $decided = $submission->gradingResults()->whereIn('status', ['reviewed', 'overridden'])->pluck('question_id')->flip();
+        $precomputed = [];
+        foreach ($questions as $question) {
+            if (! $decided->has($question->id) && $this->graders->for($question) instanceof AnswerAwareGrader) {
+                $precomputed[$question->id] = $this->evaluate($question, $answers->get($question->id));
+            }
+        }
+
+        return DB::transaction(function () use ($submission, $questions, $answers, $precomputed) {
             $submission = Submission::query()->lockForUpdate()->findOrFail($submission->id);
             if ($submission->isFinalized()) {
                 return $submission;
             }
 
-            $questions = $submission->version->questions()->with(['options', 'answerKey', 'rubricCriteria'])->get();
-            $answers = $submission->answers()->get()->keyBy('question_id');
             $existing = $submission->gradingResults()->with('openReviewTask')->get()->keyBy('question_id');
 
             foreach ($questions as $question) {
@@ -42,7 +54,7 @@ class GradingOrchestrator
                 if ($result?->isTeacherDecided()) {
                     continue;
                 }
-                $this->gradeQuestion($submission, $question, $answers->get($question->id), $result);
+                $this->gradeQuestion($submission, $question, $answers->get($question->id), $result, $precomputed[$question->id] ?? null);
             }
 
             return $this->refreshStatus($submission);
@@ -57,7 +69,9 @@ class GradingOrchestrator
             return ['manual', GradeOutcome::review('No automatic grader exists for '.$question->type.' questions.', null)];
         }
 
-        $outcome = $grader->grade($question, $answer?->effectiveValue());
+        $outcome = $grader instanceof AnswerAwareGrader
+            ? $grader->gradeAnswer($question, $answer)
+            : $grader->grade($question, $answer?->effectiveValue());
         // An unreliable reading must be resolved first; it takes precedence over other reasons,
         // and a rubric is no longer the only thing pending.
         $lowConfidence = $this->confidence->reviewReason($answer);
@@ -69,9 +83,9 @@ class GradingOrchestrator
         return [$grader->name(), $outcome];
     }
 
-    private function gradeQuestion(Submission $submission, Question $question, ?RecognizedAnswer $answer, ?GradingResult $result): void
+    private function gradeQuestion(Submission $submission, Question $question, ?RecognizedAnswer $answer, ?GradingResult $result, ?array $evaluated = null): void
     {
-        [$graderName, $outcome] = $this->evaluate($question, $answer);
+        [$graderName, $outcome] = $evaluated ?? $this->evaluate($question, $answer);
         $previousScore = $result?->awarded_score;
         $isNew = $result === null;
 
@@ -87,6 +101,7 @@ class GradingOrchestrator
         ])->save();
 
         $this->syncAutoDetails($result, $outcome);
+        $this->syncExecutions($result, $outcome);
 
         if ($isNew || $result->wasChanged(['proposed_score', 'awarded_score', 'status'])) {
             GradingEvent::create([
@@ -118,6 +133,28 @@ class GradingOrchestrator
                 ['grading_result_id' => $result->id, 'rubric_criterion_id' => null],
                 ['label' => $detail['label'], 'max_points' => $detail['max_points'], 'auto_score' => $detail['score'], 'score' => $detail['score']],
             );
+        }
+    }
+
+    /** Replace the recorded compile/test results with those of the latest run. */
+    public function syncExecutions(GradingResult $result, GradeOutcome $outcome): void
+    {
+        if ($outcome->executions === []) {
+            return;
+        }
+        $result->executions()->delete();
+        foreach ($outcome->executions as $row) {
+            CodeExecutionResult::create([
+                'grading_result_id' => $result->id,
+                'coding_test_case_id' => $row['test_case_id'],
+                'step' => $row['step'],
+                'status' => $row['status'],
+                'points' => $row['points'],
+                'exit_code' => $row['exit_code'],
+                'duration_ms' => $row['duration_ms'],
+                'stdout' => $row['stdout'],
+                'stderr' => $row['stderr'],
+            ]);
         }
     }
 
