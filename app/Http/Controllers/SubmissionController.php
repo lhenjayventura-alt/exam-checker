@@ -54,7 +54,7 @@ class SubmissionController extends Controller
     {
         $this->authorize('view', $submission->exam);
 
-        $submission->load(['exam.offering.course', 'student', 'result', 'version']);
+        $submission->load(['exam.offering.course', 'student', 'result', 'version', 'files']);
         $answers = $submission->answers()->get()->keyBy('question_id');
         $results = $submission->gradingResults()->with(['openReviewTask', 'events.user', 'details'])->get()->keyBy('question_id');
 

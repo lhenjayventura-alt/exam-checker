@@ -17,6 +17,10 @@ class RecognitionConfidenceService
 
     public function reviewReason(?RecognizedAnswer $answer): ?string
     {
+        if ($answer?->needsTranscription()) {
+            return 'Handwritten answer: transcribe it from the scanned image.';
+        }
+
         // Typed digital answers and teacher corrections carry no recognition uncertainty.
         if ($answer === null || $answer->confidence === null || $answer->isCorrected()) {
             return null;

@@ -57,6 +57,11 @@ class Submission extends Model
         return $this->hasManyThrough(ReviewTask::class, GradingResult::class);
     }
 
+    public function files(): HasMany
+    {
+        return $this->hasMany(SubmissionFile::class);
+    }
+
     public function result(): HasOne
     {
         return $this->hasOne(ExamResult::class);

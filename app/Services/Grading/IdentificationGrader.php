@@ -7,7 +7,7 @@ use App\Models\Question;
 /**
  * Grades short text answers against a list of accepted answers.
  *
- * Comparison ignores case (unless "case_sensitive"), punctuation and repeated spaces;
+ * Comparison ignores case (unless "case_sensitive"), apostrophes, punctuation and repeated spaces;
  * "+" and "#" are kept so answers like C++ and C# stay distinct. With "fuzzy" enabled,
  * a near miss (edit distance within 20% of the accepted answer, minimum 1) is never
  * awarded automatically: it is proposed at full credit and sent to teacher review.
@@ -32,6 +32,8 @@ class IdentificationGrader implements QuestionGrader
     public static function canonical(string $text, bool $caseSensitive = false): ?string
     {
         $text = $caseSensitive ? $text : mb_strtolower($text);
+        // Apostrophes join words (Ohm's = Ohms); other punctuation separates them.
+        $text = preg_replace("/['\x{2019}`]/u", '', $text);
         $text = preg_replace('/[^\p{L}\p{N}+#]+/u', ' ', $text);
         $text = trim(preg_replace('/\s+/u', ' ', $text));
 

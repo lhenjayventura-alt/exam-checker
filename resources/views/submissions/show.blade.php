@@ -51,6 +51,19 @@
                 <x-stat label="Teacher-adjusted" :value="$results->whereIn('status', ['reviewed', 'overridden'])->count()" />
             </div>
 
+            @php
+                $pageFiles = $submission->files->where('kind', 'aligned_page')->sortBy('page');
+                $crops = $submission->files->where('kind', 'answer_crop')->keyBy('question_id');
+            @endphp
+            @if ($pageFiles->isNotEmpty())
+                <div class="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm">
+                    Scanned sheet:
+                    @foreach ($pageFiles as $pf)
+                        <a href="{{ route('submission-files.show', $pf) }}" target="_blank" rel="noopener" class="ms-2 text-indigo-700 hover:underline">page {{ $pf->page }}</a>
+                    @endforeach
+                </div>
+            @endif
+
             <x-panel title="Per-question grading">
                 <div class="space-y-3">
                     @foreach ($questions as $q)
@@ -70,7 +83,11 @@
                                     @elseif ($answer && $answer->raw_value !== null && $answer->raw_value !== $answer->normalized_value)
                                         <span class="block text-xs text-gray-500">Raw: “{{ $answer->raw_value }}”</span>
                                     @endif
-                                    @if ($answer?->confidence !== null)
+                                    @if ($answer?->needsTranscription())
+                                        <span class="block text-xs text-amber-700">Handwritten: transcribe from the image</span>
+                                    @elseif ($answer?->recognition_meta['written'] ?? false)
+                                        <span class="block text-xs text-gray-500">Handwritten box{{ ($answer->recognition_meta['blank'] ?? false) ? ' (empty)' : '' }}</span>
+                                    @elseif ($answer?->confidence !== null)
                                         <span class="block text-xs text-gray-500">Recognition confidence {{ number_format($answer->confidence, 2) }}</span>
                                     @endif
                                 </span>
@@ -96,6 +113,17 @@
                             </div>
 
                             <div x-show="open" x-cloak class="space-y-4 border-t border-gray-100 px-4 py-3 text-sm">
+                                @if ($crop = $crops->get($q->id))
+                                    <img src="{{ route('submission-files.show', $crop) }}" alt="Scanned answer to question {{ $q->number }}" loading="lazy" class="max-h-48 max-w-full rounded border border-gray-300 bg-white">
+                                @endif
+                                @if (! empty($answer?->recognition_meta['fills']))
+                                    <p class="text-xs text-gray-600">Bubble darkness:
+                                        @foreach ($answer->recognition_meta['fills'] as $label => $fill)
+                                            <span class="me-2 {{ $fill >= 0.15 && $fill <= 0.55 ? 'font-semibold text-amber-700' : '' }}">{{ $label }} {{ round($fill * 100) }}%</span>
+                                        @endforeach
+                                        <span class="text-gray-400">(marked at 35% or more; 15–55% is unclear)</span>
+                                    </p>
+                                @endif
                                 @if ($task)
                                     <p class="rounded bg-amber-100 px-3 py-2 text-amber-900"><span class="font-semibold">Review needed:</span> {{ $task->reason }}</p>
                                 @endif

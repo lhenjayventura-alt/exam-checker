@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Scanner virtualenv and caches
+/scanner/.venv
+__pycache__/

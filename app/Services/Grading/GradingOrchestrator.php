@@ -58,9 +58,12 @@ class GradingOrchestrator
         }
 
         $outcome = $grader->grade($question, $answer?->effectiveValue());
+        // An unreliable reading must be resolved first; it takes precedence over other reasons,
+        // and a rubric is no longer the only thing pending.
         $lowConfidence = $this->confidence->reviewReason($answer);
-        if ($lowConfidence !== null && ! $outcome->needsReview) {
-            $outcome = $outcome->withReview($lowConfidence);
+        if ($lowConfidence !== null) {
+            $reason = $outcome->needsReview ? $lowConfidence.' '.$outcome->reviewReason : $lowConfidence;
+            $outcome = $outcome->withReview($reason, rubricPending: false);
         }
 
         return [$grader->name(), $outcome];

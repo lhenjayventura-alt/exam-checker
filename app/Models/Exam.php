@@ -55,6 +55,11 @@ class Exam extends Model
         return $this->hasMany(Submission::class);
     }
 
+    public function scanUploads(): HasMany
+    {
+        return $this->hasMany(ScanUpload::class);
+    }
+
     public function results(): HasMany
     {
         return $this->hasMany(ExamResult::class);

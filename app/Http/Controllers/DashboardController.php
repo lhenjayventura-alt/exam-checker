@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\CourseOffering;
 use App\Models\Exam;
 use App\Models\ReviewTask;
+use App\Models\ScanUpload;
 use App\Models\Submission;
 use App\Models\User;
+use App\Services\Scanning\SheetRecognizer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
@@ -71,6 +74,8 @@ class DashboardController extends Controller
             'pending_jobs' => Submission::whereIn('status', ['pending', 'processing'])->count(),
             'failed' => Submission::where('status', 'failed')->with(['exam', 'student'])->latest()->take(10)->get(),
             'open_reviews' => ReviewTask::where('status', 'open')->count(),
+            'scanner_ready' => Cache::remember('scanner.available', 60, fn () => app(SheetRecognizer::class)->available()),
+            'failed_scans' => ScanUpload::where('status', 'failed')->with('exam')->latest()->take(10)->get(),
         ];
     }
 }

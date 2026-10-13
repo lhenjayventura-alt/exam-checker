@@ -10,6 +10,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuestionController;
 use App\Http\Controllers\ReviewQueueController;
 use App\Http\Controllers\RosterController;
+use App\Http\Controllers\ScanController;
 use App\Http\Controllers\SubmissionController;
 use Illuminate\Support\Facades\Route;
 
@@ -47,6 +48,14 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/submissions/{submission}/reprocess', [SubmissionController::class, 'reprocess'])->name('submissions.reprocess');
     Route::patch('/grading-results/{gradingResult}', [GradingResultController::class, 'update'])->name('grading-results.update');
     Route::get('/review-queue', ReviewQueueController::class)->name('review-queue');
+
+    // Answer sheets and scanning
+    Route::get('/exams/{exam}/answer-sheets', [ScanController::class, 'answerSheets'])->name('exams.answer-sheets');
+    Route::get('/exams/{exam}/scans', [ScanController::class, 'index'])->name('exams.scans.index');
+    Route::post('/exams/{exam}/scans', [ScanController::class, 'store'])->middleware('throttle:30,1')->name('exams.scans.store');
+    Route::post('/scan-sheets/{sheet}/assign', [ScanController::class, 'assign'])->name('scan-sheets.assign');
+    Route::get('/scan-sheets/{sheet}/pages/{page}', [ScanController::class, 'sheetPage'])->whereNumber('page')->name('scan-sheets.page');
+    Route::get('/submission-files/{file}', [ScanController::class, 'file'])->name('submission-files.show');
 
     // Finalization, release and analytics
     Route::post('/submissions/{submission}/finalize', [ExamResultController::class, 'finalize'])->name('submissions.finalize');

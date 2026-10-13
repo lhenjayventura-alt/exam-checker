@@ -30,6 +30,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::get('/submissions/{submission}/status', [V1\SubmissionController::class, 'status']);
     Route::post('/submissions/{submission}/process', [V1\SubmissionController::class, 'process']);
 
+    Route::post('/exams/{exam}/scans', [V1\ScanController::class, 'store'])->middleware('throttle:30,1');
+    Route::get('/scan-uploads/{upload}', [V1\ScanController::class, 'show']);
+    Route::post('/scan-sheets/{sheet}/assign', [V1\ScanController::class, 'assign']);
+    Route::get('/submission-files/{file}', [V1\ScanController::class, 'file']);
+
     Route::get('/review-tasks', [V1\GradingController::class, 'reviewTasks']);
     Route::get('/grading-results/{gradingResult}', [V1\GradingController::class, 'show']);
     Route::patch('/grading-results/{gradingResult}', [V1\GradingController::class, 'update']);

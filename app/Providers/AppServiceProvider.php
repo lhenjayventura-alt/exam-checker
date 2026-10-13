@@ -8,6 +8,8 @@ use App\Services\Grading\IdentificationGrader;
 use App\Services\Grading\MultipleChoiceGrader;
 use App\Services\Grading\NumericalProblemGrader;
 use App\Services\Grading\TrueFalseGrader;
+use App\Services\Scanning\PythonOmrRecognizer;
+use App\Services\Scanning\SheetRecognizer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,6 +29,12 @@ class AppServiceProvider extends ServiceProvider
             $app->make(IdentificationGrader::class),
             $app->make(NumericalProblemGrader::class),
         ]));
+
+        $this->app->singleton(SheetRecognizer::class, fn () => new PythonOmrRecognizer(
+            config('exam_checker.scanner.python'),
+            config('exam_checker.scanner.script'),
+            config('exam_checker.scanner.timeout'),
+        ));
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ExamVersion extends Model
 {
@@ -28,6 +29,11 @@ class ExamVersion extends Model
     public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class);
+    }
+
+    public function sheetLayout(): HasOne
+    {
+        return $this->hasOne(AnswerSheetLayout::class);
     }
 
     public function isLocked(): bool

@@ -12,6 +12,9 @@
             <div class="flex flex-wrap items-center gap-2">
                 <x-status-badge :status="$exam->status" class="text-sm" />
                 <a href="{{ route('exams.results', $exam) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-gray-700 hover:bg-gray-50">Results &amp; analysis</a>
+                @if ($canManage && ! $exam->isDraft())
+                    <a href="{{ route('exams.scans.index', $exam) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-gray-700 hover:bg-gray-50">Answer sheets &amp; scans</a>
+                @endif
                 @if ($canManage && $exam->isDraft())
                     <form method="POST" action="{{ route('exams.publish', $exam) }}" onsubmit="return confirm('Publish this exam? Questions, points and the answer key will be locked.')">
                         @csrf

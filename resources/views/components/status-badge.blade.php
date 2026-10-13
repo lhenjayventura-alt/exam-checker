@@ -18,6 +18,13 @@
         'overridden' => 'bg-purple-100 text-purple-800',
         'open' => 'bg-amber-100 text-amber-800',
         'resolved' => 'bg-green-100 text-green-800',
+        'completed' => 'bg-green-100 text-green-800',
+        'matched' => 'bg-green-100 text-green-800',
+        'assigned' => 'bg-green-100 text-green-800',
+        'needs_student' => 'bg-amber-100 text-amber-800',
+        'duplicate' => 'bg-orange-100 text-orange-800',
+        'unreadable' => 'bg-red-100 text-red-800',
+        'wrong_exam' => 'bg-red-100 text-red-800',
     ];
 @endphp
 

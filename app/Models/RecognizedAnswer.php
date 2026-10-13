@@ -9,12 +9,12 @@ class RecognizedAnswer extends Model
 {
     protected $fillable = [
         'submission_id', 'question_id', 'source', 'raw_value', 'normalized_value',
-        'confidence', 'corrected_value', 'corrected_by', 'corrected_at',
+        'confidence', 'recognition_meta', 'corrected_value', 'corrected_by', 'corrected_at',
     ];
 
     protected function casts(): array
     {
-        return ['confidence' => 'float', 'corrected_at' => 'datetime'];
+        return ['confidence' => 'float', 'recognition_meta' => 'array', 'corrected_at' => 'datetime'];
     }
 
     public function submission(): BelongsTo
@@ -31,6 +31,14 @@ class RecognizedAnswer extends Model
     public function effectiveValue(): ?string
     {
         return $this->isCorrected() ? $this->corrected_value : $this->normalized_value;
+    }
+
+    /** A handwritten answer the scanner cropped but cannot read; the teacher transcribes it. */
+    public function needsTranscription(): bool
+    {
+        return ! $this->isCorrected()
+            && ($this->recognition_meta['written'] ?? false)
+            && ! ($this->recognition_meta['blank'] ?? false);
     }
 
     public function isCorrected(): bool

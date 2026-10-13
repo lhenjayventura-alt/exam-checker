@@ -95,7 +95,8 @@
             @if ($admin)
                 <div class="space-y-4">
                     <h3 class="text-lg font-semibold text-gray-800">System</h3>
-                    <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
+                    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+                        <x-stat label="Answer-sheet scanner" :value="$admin['scanner_ready'] ? 'Ready' : 'Not installed'" :hint="$admin['scanner_ready'] ? 'Python + OpenCV worker responding' : 'See README: Scanner setup'" />
                         <x-stat label="Users" :value="$admin['users']" />
                         <x-stat label="Course sections" :value="$admin['offerings']" />
                         <x-stat label="Exams" :value="$admin['exams']" />
@@ -110,6 +111,16 @@
                             </div>
                         @empty
                             <p class="text-sm text-gray-500">No failed grading jobs.</p>
+                        @endforelse
+                    </x-panel>
+                    <x-panel title="Failed scan uploads">
+                        @forelse ($admin['failed_scans'] as $scan)
+                            <div class="border-b border-gray-100 py-2 text-sm last:border-0">
+                                <span class="font-medium">{{ $scan->exam->title }}</span> · {{ $scan->original_name }} · {{ $scan->created_at->format('M j, Y g:i A') }}
+                                <span class="block text-xs text-red-700">{{ $scan->error }}</span>
+                            </div>
+                        @empty
+                            <p class="text-sm text-gray-500">No failed scan uploads.</p>
                         @endforelse
                     </x-panel>
                 </div>

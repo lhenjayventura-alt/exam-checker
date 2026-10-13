@@ -2,7 +2,7 @@
 
 AI-assisted examination checking, grading and analytics. Laravel 12 backend and web dashboard, with a versioned REST API for the (planned) Android scanning app.
 
-> **Status: Phase 2.** Multiple-choice, true/false, identification and problem-solving (numeric + rubric) exams entered digitally are graded, reviewed, finalized, released and analyzed per exam version. Rosters import from CSV; results export to CSV and Excel. Scanning/OCR, coding questions and the Android app come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 3.** Multiple-choice, true/false, identification and problem-solving (numeric + rubric) exams are graded, reviewed, finalized, released and analyzed per exam version. Answers come from typed entry or from **printed answer sheets scanned or photographed** and read locally by an OpenCV worker. Rosters import from CSV; results export to CSV and Excel. Coding questions and the Android app come in later phases (see [Roadmap](#roadmap)).
 
 ## Stack
 
@@ -13,6 +13,7 @@ AI-assisted examination checking, grading and analytics. Laravel 12 backend and 
 | Web UI | Blade, Tailwind CSS, Alpine.js (Laravel Breeze) |
 | API auth | Laravel Sanctum personal access tokens |
 | Background work | Laravel queue (`database` locally, Redis recommended in production) |
+| Answer-sheet scanner | Python 3.10+ worker in `scanner/` (OpenCV, NumPy, PyMuPDF, qrcode), run as a separate process from queue jobs |
 
 ## Setup
 
@@ -34,6 +35,19 @@ composer dev                # serve + queue:listen + logs + vite
 php artisan serve
 php artisan queue:work
 ```
+
+### Scanner setup
+
+The scanner runs on this server only; scans are never sent to an outside service.
+
+```bash
+python -m venv scanner/.venv
+scanner/.venv/Scripts/python -m pip install -r scanner/requirements.txt   # Windows
+# scanner/.venv/bin/python -m pip install -r scanner/requirements.txt     # Linux/macOS
+scanner/.venv/Scripts/python -m unittest discover -s scanner/tests        # recognition round-trip tests
+```
+
+If the virtualenv lives elsewhere, set `SCANNER_PYTHON` to its interpreter. The admin dashboard and the scans page show whether the scanner is ready. Scans are processed by the queue worker, which must be running.
 
 ### Demo data (local only)
 
@@ -79,6 +93,19 @@ Draft exam ──publish (locks version)──▶ Published ──▶ Submission
 
 **Rubric scoring** (problem solving): the teacher scores every criterion (0 to its maximum, with optional comments). The automatically checked final-answer score is pre-filled; changing it requires a reason. The awarded score is the sum of the criterion scores, stored per criterion in `grading_details` with the machine's original final-answer score kept as `auto_score`.
 
+## Answer sheets and scanning
+
+1. **Print** (exam → *Answer sheets & scans*): a blank sheet, or **named sheets** pre-filled with each student's name and number. Each page has four corner markers and a QR code `EC1|layout|student|page|signature`, signed with the app key so codes from other exams or damaged codes are rejected. Bubble questions are laid out in columns; identification and problem-solving questions get write-in boxes. Sheets are tied to the published version and its geometry is stored (`answer_sheet_layouts`), so printed sheets stay readable.
+2. **Upload** a multi-page PDF from a document scanner or a phone photo (PDF/JPEG/PNG, 20 MB by default). The original is stored privately and never modified; the same file cannot be uploaded twice.
+3. **Recognition** (queue job → `scanner/omr_cli.py`): finds the corner markers, corrects perspective and orientation (upside-down and sideways pages), decodes the QR, measures how dark each bubble is, and crops each write-in box.
+4. **Matching:** named sheets become submissions automatically. Blank sheets, unknown QR codes and students not on the roster wait in *Sheets that need you*, where the teacher picks the student next to the page image. Sheets for a student who already has a submission, sheets printed for an older version, and incomplete multi-page sheets are flagged and never graded twice.
+
+**How marks are read.** A bubble's *darkness* is the share of dark pixels inside it. Under 15% is empty and over 55% is filled; at 35% or more it counts as marked. Anything between 15% and 55% (light marks, erasures, ticks) lowers recognition confidence below the threshold, so the answer goes to review with the cropped image and the measured darkness of every bubble. Two marks on a single-answer item also go to review.
+
+**Handwriting is not read automatically.** Write-in boxes are cropped. An empty box is detected and scored as blank; otherwise the answer is sent to review as *Handwritten answer: transcribe it from the scanned image*, and the teacher's transcription is graded by the normal identification or problem-solving rules.
+
+Files are stored on the private disk (`storage/app/private/scans/...`) and streamed only through authorized routes with `Cache-Control: no-store`.
+
 ## Rosters
 
 Add students one at a time or import a CSV (`student_number, last_name, first_name[, middle_name]`, up to 1,000 rows / 1 MB; template on the class page). Every row is validated first and **nothing is imported if any row has an error**; errors are reported by row. Existing student numbers reuse the existing record. If the file's name differs from the record on file, the record is kept and a warning is shown.
@@ -109,6 +136,9 @@ Bearer token from `POST /auth/login` (`email`, `password`, `device_name`). Token
 | GET | `/review-tasks` · `/grading-results/{id}` | |
 | PATCH | `/grading-results/{id}` | `action`: `correct_answer` (`answer`), `override` (`score`, `reason`, `feedback`), `confirm`, `score_rubric` (`criteria: {id: {score, comment}}`, optional `answer_score` + `reason`) |
 | POST | `/exams/{id}/release` | Releases all finalized results of the exam |
+| POST | `/exams/{id}/scans` | Multipart `scan` (PDF/JPEG/PNG) → 202; poll `GET /scan-uploads/{id}` for sheet statuses |
+| POST | `/scan-sheets/{id}/assign` | `{student_id}` for sheets that could not be matched |
+| GET | `/submission-files/{id}` | Scanned page or answer crop (authorized, not cached) |
 | GET | `/exams/{id}/analytics` · `/exams/{id}/item-analysis` | Optional `?version=N` |
 
 ## Tests
@@ -117,12 +147,16 @@ Bearer token from `POST /auth/login` (`email`, `password`, `device_name`). Token
 php artisan test
 ```
 
-114 tests cover grader rules (including identification normalization, fuzzy review, numeric parsing, tolerance and units), the web and API workflows, rubric scoring, versioning, roster import, exports, authorization (cross-teacher, chair, admin, deactivated users), grading idempotency, OCR-confidence review routing, job failure handling, and hand-computed item-analysis values. The suite passes on SQLite (in-memory) and MySQL 8. To run against MySQL, point `DB_*` at an empty test database.
+129 PHP tests cover grader rules (including identification normalization, fuzzy review, numeric parsing, tolerance and units), the web and API workflows, rubric scoring, versioning, roster import, exports, scanning (matching, assignment, duplicates, forged QR codes, multi-page grouping, version mismatch, upload validation), authorization (cross-teacher, chair, admin, deactivated users), grading idempotency, recognition-confidence review routing, job failure handling, and hand-computed item-analysis values. `ScannerIntegrationTest` prints sheets through the app, fills them in (including a skewed, noisy phone photo), uploads them and checks the graded result with the **real** Python worker; it is skipped when the scanner is not installed.
+
+The scanner's own tests (`scanner/tests`) render sheets, mark them, distort them and read them back.
+
+The suite passes on SQLite (in-memory) and MySQL 8. To run against MySQL, point `DB_*` at an empty test database.
 
 ## Roadmap
 
 1. ~~**Phase 2:** identification, problem solving with rubrics, exam versioning, CSV roster import, Excel export.~~ Done. Known limits: no unit conversion, no symbolic math checking, rubric is per question (not reusable across questions).
-2. **Phase 3:** scan upload (PDF/JPEG/PNG) with private storage, OpenCV page alignment, replaceable OCR adapter interface, answer-region extraction, uncertain-recognition review with image crops.
+2. ~~**Phase 3:** printable answer sheets, scan upload, local OpenCV recognition behind a replaceable `SheetRecognizer` interface, answer crops, review with images.~~ Done. Known limits: recognition thresholds were tuned on synthetic marks and **should be calibrated with real pencil/pen scans from your printers**; handwriting is transcribed by teachers (an OCR/handwriting engine can be added as another `SheetRecognizer`); no student-number bubble grid (use named sheets or assign manually).
 3. **Phase 4:** isolated code-execution worker (container, no network, CPU/memory/time limits) for C and Python, then Verilog via simulator + testbench.
 4. **Phase 5:** Android app (Kotlin, CameraX, Retrofit, encrypted token storage, upload queue with retry).
 5. Post-release amendment workflow, notifications, chair-level authorized override permission, job monitoring screen.

@@ -29,8 +29,8 @@ final class GradeOutcome
         return new self($proposedScore, null, $explanation !== '' ? $explanation : $reason, true, $reason);
     }
 
-    public function withReview(string $reason): self
+    public function withReview(string $reason, ?bool $rubricPending = null): self
     {
-        return new self($this->score, $this->isCorrect, $this->explanation, true, $reason, $this->details, $this->rubricPending);
+        return new self($this->score, $this->isCorrect, $this->explanation, true, $reason, $this->details, $rubricPending ?? $this->rubricPending);
     }
 }

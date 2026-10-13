@@ -35,7 +35,8 @@ class Phase2GradersTest extends TestCase
     public static function identificationNormalization(): array
     {
         return [
-            'case and spaces' => ["  Ohm's   LAW ", 'ohm s law'],
+            'case, spaces and apostrophe' => ["  Ohm's   LAW ", 'ohms law'],
+            'curly apostrophe' => ["Kirchhoff\u{2019}s law", 'kirchhoffs law'],
             'punctuation' => ['flip-flop.', 'flip flop'],
             'keeps + and #' => ['C++', 'c++'],
             'blank' => ['  ', null],
